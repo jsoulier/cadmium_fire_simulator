@@ -2,6 +2,7 @@
 #include <gdal.h>
 #include <gdal_utils.h>
 #include <imgui.h>
+#include <imgui_internal.h>
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_sdlrenderer3.h>
 #include <spdlog/spdlog.h>
@@ -37,6 +38,11 @@ const char* ServiceSampleTypeToString(ServiceSampleType type)
     case ServiceSampleType::MoistureLiveWoody: return "Moisture Live Woody";
     }
     return "Unknown";
+}
+
+ServicePixelType ServiceSampleTypeToPixelType(ServiceSampleType type)
+{
+    return type == ServiceSampleType::FuelModel ? ServicePixelType::U32 : ServicePixelType::F32;
 }
 
 Service::Raster::Raster()
@@ -140,7 +146,7 @@ void Service::Download(ServiceSampleType types, const glm::dvec2& minLatLong, co
         if (!std::filesystem::exists(lowResolutionFilePath))
         {
             const std::string bandString = std::format("{}", GetBand(type));
-            const std::string algorithmString = type == ServiceSampleType::FuelModel ? "mode" : "average";
+            const std::string algorithmString = ServiceSampleTypeToPixelType(type) == ServicePixelType::U32 ? "mode" : "average";
             const char* args[] =
             {
                 "-b", bandString.c_str(),
@@ -182,7 +188,7 @@ void Service::Download(ServiceSampleType types, const glm::dvec2& minLatLong, co
             GDALGetRasterBand(lowResolution, 1), GF_Read,
             0, 0, raster.Width, raster.Height,
             raster.Pixels.data(), raster.Width, raster.Height,
-            type == ServiceSampleType::FuelModel ? GDT_UInt32 : GDT_Float32, 0, 0);
+            ServiceSampleTypeToPixelType(type) == ServicePixelType::U32 ? GDT_UInt32 : GDT_Float32, 0, 0);
         GDALClose(lowResolution);
         if (status != CE_None)
         {
@@ -202,6 +208,7 @@ void Service::Download(ServiceSampleType types, const glm::dvec2& minLatLong, co
         uint32_t* texels = reinterpret_cast<uint32_t*>(texture->GetPixels());
         if (type == ServiceSampleType::FuelModel)
         {
+            SDL_assert(ServiceSampleTypeToPixelType(type) == ServicePixelType::U32);
             for (size_t i = 0; i < raster.Pixels.size(); i++)
             {
                 texels[i] = FireFuelModelTypeGetColor(FireFuelModelType(raster.Pixels[i].U32));
@@ -209,9 +216,10 @@ void Service::Download(ServiceSampleType types, const glm::dvec2& minLatLong, co
         }
         else
         {
+            SDL_assert(ServiceSampleTypeToPixelType(type) == ServicePixelType::F32);
             float minValue = std::numeric_limits<float>::max();
             float maxValue = std::numeric_limits<float>::lowest();
-            for (const Pixel& pixel : raster.Pixels)
+            for (const ServicePixel& pixel : raster.Pixels)
             {
                 minValue = std::min(minValue, pixel.F32);
                 maxValue = std::max(maxValue, pixel.F32);
@@ -227,12 +235,37 @@ void Service::Download(ServiceSampleType types, const glm::dvec2& minLatLong, co
                 texels[i] = IM_COL32(gray, gray, gray, 255);
             }
         }
+        ImGui::RegisterUserTexture(texture);
         raster.Texture = texture->GetTexRef();
     }
 }
 
-void Service::SetSample(const glm::dvec2& latLong, ServiceSample& sample, ServiceSampleType type)
+ServicePixel Service::GetPixel(ServiceSampleType type, const glm::dvec2& latLong) const
 {
+    const auto it = Rasters.find(type);
+    if (it == Rasters.end())
+    {
+        return ServicePixel{};
+    }
+    const double* transform = it->second.InverseGeoTransform;
+    int x = int(transform[0] + latLong.y * transform[1] + latLong.x * transform[2]);
+    int y = int(transform[3] + latLong.y * transform[4] + latLong.x * transform[5]);
+    return GetPixel(type, x, y);
+}
+
+ServicePixel Service::GetPixel(ServiceSampleType type, int x, int y) const
+{
+    const auto it = Rasters.find(type);
+    if (it == Rasters.end())
+    {
+        return ServicePixel{};
+    }
+    const Raster& raster = it->second;
+    if (x < 0 || y < 0 || x >= raster.Width || y >= raster.Height)
+    {
+        return ServicePixel{};
+    }
+    return raster.Pixels[size_t(y) * raster.Width + x];
 }
 
 ImTextureRef Service::GetTextureRef(ServiceSampleType type)
@@ -247,3 +280,4 @@ ImTextureRef Service::GetTextureRef(ServiceSampleType type)
         return ImTextureRef();
     }
 }
+

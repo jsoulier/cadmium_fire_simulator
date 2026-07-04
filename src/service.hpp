@@ -30,8 +30,6 @@ enum class ServiceSampleType
     MoistureLiveWoody = 1 << 13,
 };
 
-const char* ServiceSampleTypeToString(ServiceSampleType type);
-
 struct ServiceSample
 {
     FireFuelModelType FuelModel;
@@ -50,6 +48,21 @@ struct ServiceSample
     float MoistureLiveWoody;
 };
 
+union ServicePixel
+{
+    float F32;
+    uint32_t U32;
+};
+
+enum class ServicePixelType
+{
+    F32,
+    U32,
+};
+
+const char* ServiceSampleTypeToString(ServiceSampleType type);
+ServicePixelType ServiceSampleTypeToPixelType(ServiceSampleType type);
+
 class Service
 {
 public:
@@ -57,20 +70,14 @@ public:
     virtual std::string GetName() const = 0;
     virtual ServiceSampleType GetSupportedTypes() const = 0;
     void Download(ServiceSampleType types, const glm::dvec2& minLatLong, const glm::dvec2& maxLatLong, double resolution);
-    void SetSample(const glm::dvec2& latLong, ServiceSample& sample, ServiceSampleType type);
+    ServicePixel GetPixel(ServiceSampleType type, const glm::dvec2& latLong) const;
+    ServicePixel GetPixel(ServiceSampleType type, int x, int y) const;
     ImTextureRef GetTextureRef(ServiceSampleType type);
-    
-protected:
-    union Pixel
-    {
-        uint32_t U32;
-        float F32;
-    };
 
 private:
     virtual std::vector<std::string> GetSourceURLs(const glm::dvec2& minLatLong, const glm::dvec2& maxLatLong) const = 0;
     virtual int GetBand(ServiceSampleType type) const = 0;
-    virtual void PostProcess(ServiceSampleType type, std::vector<Pixel>& pixels) {}
+    virtual void PostProcess(ServiceSampleType type, std::vector<ServicePixel>& pixels) {}
 
     struct Raster
     {
@@ -78,10 +85,16 @@ private:
 
         int Width;
         int Height;
+        // [0] upper-left corner X
+        // [1] pixel width
+        // [2] row rotation (0 for north-up)
+        // [3] upper-left corner Y
+        // [4] pixel height (usually negative)
+        // [5] column rotation (0 for north-up)
         double GeoTransform[6];
         double InverseGeoTransform[6];
         std::string Wkt;
-        std::vector<Pixel> Pixels;
+        std::vector<ServicePixel> Pixels;
         ImTextureRef Texture;
     };
 

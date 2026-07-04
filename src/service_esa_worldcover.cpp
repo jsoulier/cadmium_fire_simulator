@@ -53,9 +53,9 @@ public:
         return 1;
     }
 
-    void PostProcess(ServiceSampleType type, std::vector<Pixel>& pixels) override
+    void PostProcess(ServiceSampleType type, std::vector<ServicePixel>& pixels) override
     {
-        for (Pixel& pixel : pixels)
+        for (ServicePixel& pixel : pixels)
         {
             switch (pixel.U32)
             {

@@ -7,6 +7,7 @@
 #include <imgui_impl_sdlrenderer3.h>
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -16,9 +17,10 @@
 struct State
 {
     State()
-        : MinLatLong{49.20, -123.20}
-        , MaxLatLong{49.35, -123.00}
+        : MinLatLong{45.30, -75.85}
+        , MaxLatLong{45.50, -75.55}
         , Resolution{0.001f}
+        , ImageDebugSampleType{ServiceSampleType::FuelModel}
     {
         Services.emplace_back(ServiceCreateESAWorldCover());
         ServiceIndices[ServiceSampleType::FuelModel] = 0;
@@ -27,6 +29,7 @@ struct State
     glm::dvec2 MinLatLong;
     glm::dvec2 MaxLatLong;
     double Resolution;
+    ServiceSampleType ImageDebugSampleType;
     std::vector<std::unique_ptr<Service>> Services;
     ankerl::unordered_dense::map<ServiceSampleType, int> ServiceIndices;
 };
@@ -124,11 +127,6 @@ static void Tick()
             }
             ImGui::EndCombo();
         }
-        ImTextureRef texture = state.Services[index]->GetTextureRef(type);
-        if (texture.GetTexID() != ImTextureID_Invalid)
-        {
-            ImGui::Image(texture, ImVec2(float(texture._TexData->Width), float(texture._TexData->Height)));
-        }
     }
     if (ImGui::Button("Download"))
     {
@@ -142,6 +140,55 @@ static void Tick()
             state.Services[index]->Download(ServiceSampleType(types), state.MinLatLong, state.MaxLatLong, state.Resolution);
         }
     }
+    if (ImGui::Begin("Image Debug"))
+    {
+        for (const auto& [type, index] : state.ServiceIndices)
+        {
+            if (ImGui::Selectable(ServiceSampleTypeToString(type), state.ImageDebugSampleType == type))
+            {
+                state.ImageDebugSampleType = type;
+            }
+        }
+        if (auto it = state.ServiceIndices.find(state.ImageDebugSampleType); it != state.ServiceIndices.end())
+        {
+            Service* service = state.Services[it->second].get();
+            ImTextureRef texture = service->GetTextureRef(state.ImageDebugSampleType);
+            if (texture.GetTexID() != ImTextureID_Invalid)
+            {
+                const ImVec2 position = ImGui::GetCursorScreenPos();
+                const ImVec2 available = ImGui::GetContentRegionAvail();
+                float width = float(texture._TexData->Width);
+                float height = float(texture._TexData->Height);
+                float scale = std::min(available.x / width, available.y / height);
+                ImGui::Image(texture, ImVec2(width * scale, height * scale));
+                if (ImGui::IsItemHovered())
+                {
+                    ImVec2 mouse = ImGui::GetMousePos();
+                    int x = (mouse.x - position.x) / scale;
+                    int y = (mouse.y - position.y) / scale;
+                    ServicePixel pixel = service->GetPixel(state.ImageDebugSampleType, x, y);
+                    ServicePixelType pixelType = ServiceSampleTypeToPixelType(state.ImageDebugSampleType);
+                    if (pixelType == ServicePixelType::U32)
+                    {
+                        ImGui::SetTooltip("%u", pixel.U32);
+                    }
+                    else if (pixelType == ServicePixelType::F32)
+                    {
+                        ImGui::SetTooltip("%.3f", pixel.F32);
+                    }
+                    else
+                    {
+                        SDL_assert(false);
+                    }
+                }
+            }
+        }
+        else
+        {
+            ImGui::TextUnformatted("Unloaded");
+        }
+    }
+    ImGui::End();
     ImGui::Render();
     SDL_SetRenderDrawColorFloat(renderer, 0.1f, 0.1f, 0.1f, 1.0f);
     SDL_RenderClear(renderer);
