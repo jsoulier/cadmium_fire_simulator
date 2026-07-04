@@ -5,11 +5,13 @@
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -36,8 +38,8 @@ void FireResults::Load(const std::filesystem::path& path, const glm::ivec2& size
     Width = size.x;
     Height = size.y;
     MaxTime = 0.0f;
-    Ignitions.resize(size_t(Width) * Height);
-    Burns.resize(size_t(Width) * Height);
+    Ignitions.assign(size_t(Width) * Height, std::numeric_limits<float>::infinity());
+    Burns.assign(size_t(Width) * Height, std::numeric_limits<float>::infinity());
     std::string line;
     std::getline(file, line); 
     while (std::getline(file, line))
@@ -92,17 +94,10 @@ void FireResults::Update(float time)
             if (time < Burns[i])
             {
                 float range = Burns[i] - Ignitions[i];
-                if (!std::isfinite(range) || range <= 0.0f)
-                {
-                    range = MaxTime - Ignitions[i];
-                }
-                float alpha = 0.0f;
-                if (range > 0.0f)
-                {
-                    alpha = std::clamp((time - Ignitions[i]) / range, 0.0f, 1.0f);
-                }
-                const uint8_t g = uint8_t(230.0f - 200.0f * alpha);
-                const uint8_t b = uint8_t(60.0f - 60.0f * alpha);
+                SDL_assert(std::isfinite(range) && range > 0.0f);
+                float alpha = std::clamp((time - Ignitions[i]) / range, 0.0f, 1.0f);
+                uint8_t g = uint8_t(230.0f - 200.0f * alpha);
+                uint8_t b = uint8_t(60.0f - 60.0f * alpha);
                 color = IM_COL32(255, g, b, 220);
             }
             else

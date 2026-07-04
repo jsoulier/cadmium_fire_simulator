@@ -26,8 +26,7 @@ FireSimulatorParams::FireSimulatorParams()
     , Height{0}
     , Resolution{30.0}
     , CoordinatorType{FireSimulatorCoordinatorType::EventDriven}
-    , FireX{0}
-    , FireY{0}
+    , Igniting{[](int, int) { return false; }}
     , FuelModel{[](int, int) { return kFireFuelModelFM4; }}
     , Longitude{[](int, int) { return 0.0f; }}
     , Latitude{[](int, int) { return 0.0f; }}
@@ -85,7 +84,7 @@ bool FireSimulatorRun(const FireSimulatorParams& params)
                 for (int x = 0; x < columns; x++)
                 {
                     FireFuelModelType fuelModel = params.FuelModel(x, y);
-                    bool igniting = x == params.FireX && y == params.FireY;
+                    bool igniting = params.Igniting(x, y);
                     if (!FireFuelModelTypeIsBurnable(fuelModel) && !igniting)
                     {
                         continue;
@@ -97,7 +96,7 @@ bool FireSimulatorRun(const FireSimulatorParams& params)
                             {"Status", igniting ? int(FireCellStatus::Igniting) : 0}
                         }},
                         {"config", {
-                            {"FuelModel", igniting ? kFireFuelModelFM4 : fuelModel},
+                            {"FuelModel", fuelModel},
                             {"Slope", params.Slope(x, y)},
                             {"Aspect", params.Aspect(x, y)},
                             {"Longitude", params.Longitude(x, y)},

@@ -27,8 +27,7 @@ struct FireSimulatorParams
     int Height;                                                // number of cells
     float Resolution;                                          // size of each cell
     FireSimulatorCoordinatorType CoordinatorType;
-    int FireX;                                                 // fire origin
-    int FireY;                                                 // fire origin
+    std::function<bool(int x, int y)> Igniting;
     std::function<FireFuelModelType(int x, int y)> FuelModel;
     std::function<double(int x, int y)> Longitude;
     std::function<double(int x, int y)> Latitude;

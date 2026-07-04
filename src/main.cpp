@@ -36,7 +36,7 @@ struct State
         , MaxLatLong{45.50, -75.55}
         , Resolution{0.001f}
         , CoordinatorType{FireSimulatorCoordinatorType::EventDriven}
-        , FirePosition{0, 0}
+        , Ignition{0, 0}
         , ImageDebugSampleType{ServiceSampleType::FuelModel}
     {
         Services.emplace_back(ServiceCreateESAWorldCover());
@@ -62,7 +62,7 @@ struct State
     glm::dvec2 MaxLatLong;
     double Resolution;
     FireSimulatorCoordinatorType CoordinatorType;
-    glm::ivec2 FirePosition;
+    glm::ivec2 Ignition;
     ServiceSampleType ImageDebugSampleType;
 };
 
@@ -70,7 +70,7 @@ static SDL_Window* window;
 static SDL_Renderer* renderer;
 static State state;
 static FireResults results;
-static float time;
+static float resultsTime;
 
 static bool Init()
 {
@@ -165,10 +165,12 @@ static void Simulate()
     params.Height = size.y;
     params.Resolution = float(state.Resolution * kMetresPerDegree);
     params.CoordinatorType = state.CoordinatorType;
-    params.FireX = state.FirePosition.x;
-    params.FireY = state.FirePosition.y;
     const glm::dvec2 min = state.MinLatLong;
     const glm::dvec2 max = state.MaxLatLong;
+    params.Igniting = [ignition = state.Ignition](int x, int y)
+    {
+        return x == ignition.x && y == ignition.y;
+    };
     params.FuelModel = [&fuelService](int x, int y)
     {
         return FireFuelModelType(fuelService->GetPixel(ServiceSampleType::FuelModel, x, y).U32);
@@ -196,7 +198,7 @@ static void Simulate()
     params.MoistureLiveWoody = getPixel(ServiceSampleType::MoistureLiveWoody);
     params.OutPath = kFireSimulatorPath.string();
     FireSimulatorRun(params);
-    results.Load(kFireSimulatorPath, size, time);
+    results.Load(kFireSimulatorPath, size, resultsTime);
 }
 
 static void DrawGeneral()
@@ -235,8 +237,6 @@ static void DrawGeneral()
             ImGui::TreePop();
         }
     }
-    ImGui::InputInt("Fire X", &state.FirePosition.x);
-    ImGui::InputInt("Fire Y", &state.FirePosition.y);
     const char* coordinators[] = { "Event Driven", "Brute Force" };
     int coordinator = int(state.CoordinatorType);
     if (ImGui::Combo("Coordinator", &coordinator, coordinators, SDL_arraysize(coordinators)))
@@ -270,13 +270,13 @@ static void DrawImage()
     if (ImGui::Button("Load Results"))
     {
         glm::ivec2 size = state.Services[state.ServiceIndices.at(ServiceSampleType::FuelModel)]->GetSize(ServiceSampleType::FuelModel);
-        results.Load(kFireSimulatorPath, size, time);
+        results.Load(kFireSimulatorPath, size, resultsTime);
     }
     if (results.GetMaxTime() > 0.0f)
     {
-        if (ImGui::SliderFloat("Time", &time, 0.0f, results.GetMaxTime()))
+        if (ImGui::SliderFloat("Time", &resultsTime, 0.0f, results.GetMaxTime()))
         {
-            results.Update(time);
+            results.Update(resultsTime);
         }
     }
     std::unique_ptr<Service>& service = state.Services[state.ServiceIndices.at(state.ImageDebugSampleType)];
@@ -301,7 +301,7 @@ static void DrawImage()
             int y = (mouse.y - position.y) / scale;
             if (ImGui::IsMouseClicked(ImGuiMouseButton_Right))
             {
-                state.FirePosition = {x, y};
+                state.Ignition = {x, y};
             }
             ServicePixel pixel = service->GetPixel(state.ImageDebugSampleType, x, y);
             ServicePixelType pixelType = ServiceSampleTypeToPixelType(state.ImageDebugSampleType);
@@ -318,12 +318,12 @@ static void DrawImage()
                 SDL_assert(false);
             }
         }
-        if (state.FirePosition.x >= 0 && state.FirePosition.x < int(width) &&
-            state.FirePosition.y >= 0 && state.FirePosition.y < int(height))
+        if (state.Ignition.x >= 0 && state.Ignition.x < int(width) &&
+            state.Ignition.y >= 0 && state.Ignition.y < int(height))
         {
             ImVec2 origin(
-                position.x + (state.FirePosition.x + 0.5f) * scale,
-                position.y + (state.FirePosition.y + 0.5f) * scale);
+                position.x + (state.Ignition.x + 0.5f) * scale,
+                position.y + (state.Ignition.y + 0.5f) * scale);
             ImGui::GetWindowDrawList()->AddCircleFilled(origin, 4.0f, IM_COL32(255, 0, 0, 255));
         }
     }
