@@ -2,6 +2,7 @@
 
 #include <ankerl/unordered_dense.h>
 #include <glm/glm.hpp>
+#include <imgui.h>
 
 #include <cstdint>
 #include <filesystem>
@@ -54,11 +55,21 @@ public:
     virtual std::string GetName() const = 0;
     virtual ServiceSampleType GetSupportedTypes() const = 0;
     void Download(ServiceSampleType types, const glm::dvec2& minLatLong, const glm::dvec2& maxLatLong, double resolution);
-    virtual void SetSample(const glm::dvec2& latLong, ServiceSample& sample, ServiceSampleType type) = 0;
+    void SetSample(const glm::dvec2& latLong, ServiceSample& sample, ServiceSampleType type);
     
+protected:
+    // One raster cell: 4 bytes read straight from GDAL. Categorical bands use
+    // U32, continuous bands use F32.
+    union Pixel
+    {
+        uint32_t U32;
+        float F32;
+    };
+
 private:
     virtual std::vector<std::string> GetSourceURLs(const glm::dvec2& minLatLong, const glm::dvec2& maxLatLong) const = 0;
     virtual int GetBand(ServiceSampleType type) const = 0;
+    virtual void PostProcess(ServiceSampleType type, std::vector<Pixel>& pixels) {}
 
     struct Raster
     {
@@ -69,7 +80,8 @@ private:
         double GeoTransform[6];
         double InverseGeoTransform[6];
         std::string Wkt;
-        std::vector<uint32_t> Pixels;
+        std::vector<Pixel> Pixels;
+        ImTextureRef Texture;
     };
 
     ankerl::unordered_dense::map<ServiceSampleType, Raster> Rasters;

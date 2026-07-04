@@ -1,11 +1,16 @@
 #include <SDL3/SDL.h>
 #include <gdal.h>
 #include <gdal_utils.h>
+#include <imgui.h>
+#include <imgui_impl_sdl3.h>
+#include <imgui_impl_sdlrenderer3.h>
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
 #include <cassert>
 #include <filesystem>
 #include <format>
+#include <limits>
 #include <string>
 #include <utility>
 #include <vector>
@@ -14,16 +19,12 @@
 
 static const std::filesystem::path kBasePath = SDL_GetBasePath();
 
-static bool IsCategory(ServiceSampleType type)
-{
-    return type == ServiceSampleType::FuelModel;
-}
-
 Service::Raster::Raster()
     : Width(0)
     , Height(0)
     , GeoTransform{}
     , InverseGeoTransform{}
+    , Texture{}
 {
 }
 
@@ -118,7 +119,7 @@ void Service::Download(ServiceSampleType types, const glm::dvec2& minLatLong, co
         if (!std::filesystem::exists(lowResolutionFilePath))
         {
             const std::string bandString = std::format("{}", GetBand(type));
-            const std::string algorithmString = IsCategory(type) ? "mode" : "average";
+            const std::string algorithmString = type == ServiceSampleType::FuelModel ? "mode" : "average";
             const char* args[] =
             {
                 "-b", bandString.c_str(),
@@ -160,14 +161,56 @@ void Service::Download(ServiceSampleType types, const glm::dvec2& minLatLong, co
             GDALGetRasterBand(lowResolution, 1), GF_Read,
             0, 0, raster.Width, raster.Height,
             raster.Pixels.data(), raster.Width, raster.Height,
-            IsCategory(type) ? GDT_UInt32 : GDT_Float32, 0, 0);
+            type == ServiceSampleType::FuelModel ? GDT_UInt32 : GDT_Float32, 0, 0);
         GDALClose(lowResolution);
         if (status != CE_None)
         {
             spdlog::error("Failed to read {}: {}", lowResolutionFilePath.string(), CPLGetLastErrorMsg());
             continue;
         }
+        PostProcess(type, raster.Pixels);
         Rasters[type] = std::move(raster);
     }
     GDALClose(highResolution);
+    ////////////////////////////////////////////////////////////////////////////
+    // Create ImTextures for each band
+    for (auto& [type, raster] : Rasters)
+    {
+        ImTextureData* texture = IM_NEW(ImTextureData)();
+        texture->Create(ImTextureFormat_RGBA32, raster.Width, raster.Height);
+        uint32_t* texels = reinterpret_cast<uint32_t*>(texture->GetPixels());
+        if (type == ServiceSampleType::FuelModel)
+        {
+            for (size_t i = 0; i < raster.Pixels.size(); i++)
+            {
+                texels[i] = FireFuelModelTypeGetColor(FireFuelModelType(raster.Pixels[i].U32));
+            }
+        }
+        else
+        {
+            float minValue = std::numeric_limits<float>::max();
+            float maxValue = std::numeric_limits<float>::lowest();
+            for (const Pixel& pixel : raster.Pixels)
+            {
+                minValue = std::min(minValue, pixel.F32);
+                maxValue = std::max(maxValue, pixel.F32);
+            }
+            const float range = maxValue - minValue;
+            for (size_t i = 0; i < raster.Pixels.size(); i++)
+            {
+                uint8_t gray = 0;
+                if (range > 0.0f)
+                {
+                    gray = (raster.Pixels[i].F32 - minValue) / range * 255.0f;
+                }
+                texels[i] = IM_COL32(gray, gray, gray, 255);
+            }
+        }
+        ImGui::GetPlatformIO().Textures.push_back(texture);
+        raster.Texture = texture->GetTexRef();
+    }
+}
+
+void Service::SetSample(const glm::dvec2& latLong, ServiceSample& sample, ServiceSampleType type)
+{
 }

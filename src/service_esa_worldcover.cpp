@@ -48,13 +48,31 @@ public:
         return urls;
     }
 
-    void SetSample(const glm::dvec2& latLong, ServiceSample& sample, ServiceSampleType type) override
-    {
-    }
-
     int GetBand(ServiceSampleType type) const override
     {
         return 1;
+    }
+
+    void PostProcess(ServiceSampleType type, std::vector<Pixel>& pixels) override
+    {
+        for (Pixel& pixel : pixels)
+        {
+            switch (pixel.U32)
+            {
+            case 10:  pixel.U32 = kFireFuelModelTU5; break; // tree cover
+            case 20:  pixel.U32 = kFireFuelModelSH5; break; // shrubland
+            case 30:  pixel.U32 = kFireFuelModelGR2; break; // grassland
+            case 40:  pixel.U32 = kFireFuelModelGR1; break; // cropland
+            case 50:  pixel.U32 = kFireFuelModelNB1; break; // built-up
+            case 60:  pixel.U32 = kFireFuelModelNB9; break; // bare / sparse vegetation
+            case 70:  pixel.U32 = kFireFuelModelNB2; break; // snow and ice
+            case 80:  pixel.U32 = kFireFuelModelNB8; break; // permanent water bodies
+            case 90:  pixel.U32 = kFireFuelModelGR2; break; // herbaceous wetland
+            case 95:  pixel.U32 = kFireFuelModelTU1; break; // mangroves
+            case 100: pixel.U32 = kFireFuelModelGR1; break; // moss and lichen
+            default:  pixel.U32 = kFireFuelModelNB9; break; // unknown / no data
+            }
+        }
     }
 };
 

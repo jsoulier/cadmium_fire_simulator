@@ -1,12 +1,15 @@
-// sourced from behave/src/behave/fuelModels.cpp
+// behave/src/behave/fuelModels.cpp
 
 #pragma once
+
+#include <imgui.h>
 
 #include <cstdint>
 
 using FireFuelModelType = uint8_t;
 
 bool FireFuelModelTypeIsBurnable(FireFuelModelType fuelModel);
+ImColor FireFuelModelTypeGetColor(FireFuelModelType fuelModel);
 
 // original
 inline constexpr FireFuelModelType kFireFuelModelFM1 = 1;
