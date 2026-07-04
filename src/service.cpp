@@ -77,7 +77,6 @@ void Service::Download(ServiceSampleType types, const glm::dvec2& minLatLong, co
         std::vector<std::string> sources = GetSourceURLs(minLatLong, maxLatLong);
         if (sources.empty())
         {
-            spdlog::error("Failed to get source URLs for {}", GetName());
             return;
         }
         std::vector<const char*> sourceNames;

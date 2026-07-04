@@ -123,6 +123,19 @@ static bool Poll()
     return true;
 }
 
+static void Download()
+{
+    ankerl::unordered_dense::map<int, ServiceSampleType> serviceIndicesToTypes;
+    for (const auto& [type, index] : state.ServiceIndices)
+    {
+        serviceIndicesToTypes[index] |= type;
+    }
+    for (const auto& [index, types] : serviceIndicesToTypes)
+    {
+        state.Services[index]->Download(types, state.MinLatLong, state.MaxLatLong, state.Resolution);
+    }
+}
+
 static void Simulate()
 {
     auto getPixel = [](ServiceSampleType type) -> std::function<float(int, int)>
@@ -204,22 +217,13 @@ static void DrawGeneral()
             ImGui::EndCombo();
         }
     }
-    if (ImGui::Button("Download"))
-    {
-        ankerl::unordered_dense::map<int, ServiceSampleType> serviceIndicesToTypes;
-        for (const auto& [type, index] : state.ServiceIndices)
-        {
-            serviceIndicesToTypes[index] |= type;
-        }
-        for (const auto& [index, types] : serviceIndicesToTypes)
-        {
-            state.Services[index]->Download(types, state.MinLatLong, state.MaxLatLong, state.Resolution);
-        }
-    }
     for (std::unique_ptr<Service>& service : state.Services)
     {
-        ImGui::SeparatorText(service->GetDisplayName());
-        service->RenderImGui();
+        if (ImGui::TreeNode(service->GetDisplayName()))
+        {
+            service->RenderImGui();
+            ImGui::TreePop();
+        }
     }
     ImGui::InputInt("Fire X", &state.FirePosition.x);
     ImGui::InputInt("Fire Y", &state.FirePosition.y);
@@ -229,13 +233,18 @@ static void DrawGeneral()
     {
         state.CoordinatorType = FireSimulatorCoordinatorType(coordinator);
     }
+    if (ImGui::Button("Download"))
+    {
+        Download();
+    }
     if (ImGui::Button("Simulate"))
     {
+        Download();
         Simulate();
     }
 }
 
-static void DrawImageDebug()
+static void DrawImage()
 {
     if (ImGui::BeginCombo("Sample Type", ServiceSampleTypeToString(state.ImageDebugSampleType)))
     {
@@ -263,6 +272,10 @@ static void DrawImageDebug()
             ImVec2 mouse = ImGui::GetMousePos();
             int x = (mouse.x - position.x) / scale;
             int y = (mouse.y - position.y) / scale;
+            if (ImGui::IsMouseClicked(ImGuiMouseButton_Right))
+            {
+                state.FirePosition = {x, y};
+            }
             ServicePixel pixel = service->GetPixel(state.ImageDebugSampleType, x, y);
             ServicePixelType pixelType = ServiceSampleTypeToPixelType(state.ImageDebugSampleType);
             if (pixelType == ServicePixelType::U32)
@@ -278,6 +291,14 @@ static void DrawImageDebug()
                 SDL_assert(false);
             }
         }
+        if (state.FirePosition.x >= 0 && state.FirePosition.x < int(width) &&
+            state.FirePosition.y >= 0 && state.FirePosition.y < int(height))
+        {
+            ImVec2 origin(
+                position.x + (state.FirePosition.x + 0.5f) * scale,
+                position.y + (state.FirePosition.y + 0.5f) * scale);
+            ImGui::GetWindowDrawList()->AddCircleFilled(origin, 4.0f, IM_COL32(255, 0, 0, 255));
+        }
     }
 }
 
@@ -286,13 +307,14 @@ static void Tick()
     ImGui_ImplSDLRenderer3_NewFrame();
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
-    if (ImGui::CollapsingHeader("General", ImGuiTreeNodeFlags_DefaultOpen))
+    if (ImGui::Begin("General"))
     {
         DrawGeneral();
     }
-    if (ImGui::Begin("Image Debug"))
+    ImGui::End();
+    if (ImGui::Begin("Image"))
     {
-        DrawImageDebug();
+        DrawImage();
     }
     ImGui::End();
     ImGui::Render();
