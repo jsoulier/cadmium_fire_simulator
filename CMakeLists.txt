@@ -15,6 +15,8 @@ set(SPDLOG_ENABLE ON)
 set(TRACY_ENABLE ON)
 
 find_package(GDAL CONFIG REQUIRED)
+find_file(PROJ_DB NAMES proj.db PATH_SUFFIXES share/proj REQUIRED)
+configure_file(${PROJ_DB} ${BINARY_DIR}/proj.db COPYONLY)
 
 add_subdirectory(lib/behave)
 add_subdirectory(lib/cadmium)

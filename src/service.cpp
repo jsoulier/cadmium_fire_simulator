@@ -2,9 +2,10 @@
 #include <gdal.h>
 #include <gdal_utils.h>
 #include <imgui.h>
-#include <imgui_internal.h>
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_sdlrenderer3.h>
+#include <imgui_internal.h>
+#include <ogr_srs_api.h>
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
@@ -58,6 +59,8 @@ void Service::Download(ServiceSampleType types, const glm::dvec2& minLatLong, co
 {
     SDL_assert((int(types) & ~int(GetSupportedTypes())) == 0);
     GDALAllRegister();
+    const char* projPath[] = { SDL_GetBasePath(), nullptr };
+    OSRSetPROJSearchPaths(projPath);
     ////////////////////////////////////////////////////////////////////////////
     // Download and cache the GeoTIFF. Use a VRT to assemble multiple tiles and clip them to the desired region
     std::filesystem::path basePath = SDL_GetBasePath();
