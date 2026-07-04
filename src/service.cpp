@@ -222,10 +222,15 @@ void Service::Download(ServiceSampleType types, const glm::dvec2& minLatLong, co
         else
         {
             SDL_assert(ServiceSampleTypeToPixelType(type) == ServicePixelType::F32);
+            static constexpr float kNoData = -9999.0f;
             float minValue = std::numeric_limits<float>::max();
             float maxValue = std::numeric_limits<float>::lowest();
             for (const ServicePixel& pixel : raster.Pixels)
             {
+                if (pixel.F32 == kNoData)
+                {
+                    continue;
+                }
                 minValue = std::min(minValue, pixel.F32);
                 maxValue = std::max(maxValue, pixel.F32);
             }
@@ -233,7 +238,7 @@ void Service::Download(ServiceSampleType types, const glm::dvec2& minLatLong, co
             for (size_t i = 0; i < raster.Pixels.size(); i++)
             {
                 uint8_t gray = 0;
-                if (range > 0.0f)
+                if (raster.Pixels[i].F32 != kNoData && range > 0.0f)
                 {
                     gray = (raster.Pixels[i].F32 - minValue) / range * 255.0f;
                 }
@@ -317,7 +322,7 @@ void Service::DEMProcessing(GDALDatasetH elevation, const std::string& basePath,
         return;
     }
     const char* processing;
-    std::vector<const char*> args = { "-of", "GTiff" };
+    std::vector<const char*> args = { "-of", "GTiff", "-compute_edges" };
     if (type == ServiceSampleType::Slope)
     {
         static constexpr const char* kDegreesToMetres = "111120";
@@ -325,9 +330,14 @@ void Service::DEMProcessing(GDALDatasetH elevation, const std::string& basePath,
         args.push_back("-s");
         args.push_back(kDegreesToMetres);
     }
-    else
+    else if (type == ServiceSampleType::Aspect)
     {
         processing = "aspect";
+        args.push_back("-zero_for_flat");
+    }
+    else
+    {
+        SDL_assert(false);
     }
     args.push_back(nullptr);
     GDALDEMProcessingOptions* options = GDALDEMProcessingOptionsNew(const_cast<char**>(args.data()), nullptr);
