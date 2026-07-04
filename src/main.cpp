@@ -5,21 +5,28 @@
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_sdlrenderer3.h>
+#include <imgui_internal.h>
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
+#include <cmath>
+#include <cstdint>
 #include <format>
+#include <fstream>
 #include <functional>
+#include <limits>
 #include <memory>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "fire_model.hpp"
+#include "fire_results.hpp"
 #include "fire_simulator.hpp"
 #include "service.hpp"
 
 static const std::filesystem::path kBasePath = SDL_GetBasePath();
-static const std::filesystem::path kFireSimulatorPath = kBasePath / "fire_simulator.csv";
+static const std::filesystem::path kFireSimulatorPath = kBasePath / "fire_simulator_results.csv";
 static constexpr double kMetresPerDegree = 111320.0;
 
 struct State
@@ -62,6 +69,8 @@ struct State
 static SDL_Window* window;
 static SDL_Renderer* renderer;
 static State state;
+static FireResults results;
+static float time;
 
 static bool Init()
 {
@@ -187,6 +196,7 @@ static void Simulate()
     params.MoistureLiveWoody = getPixel(ServiceSampleType::MoistureLiveWoody);
     params.OutPath = kFireSimulatorPath.string();
     FireSimulatorRun(params);
+    results.Load(kFireSimulatorPath, size, time);
 }
 
 static void DrawGeneral()
@@ -257,6 +267,18 @@ static void DrawImage()
         }
         ImGui::EndCombo();
     }
+    if (ImGui::Button("Load Results"))
+    {
+        glm::ivec2 size = state.Services[state.ServiceIndices.at(ServiceSampleType::FuelModel)]->GetSize(ServiceSampleType::FuelModel);
+        results.Load(kFireSimulatorPath, size, time);
+    }
+    if (results.GetMaxTime() > 0.0f)
+    {
+        if (ImGui::SliderFloat("Time", &time, 0.0f, results.GetMaxTime()))
+        {
+            results.Update(time);
+        }
+    }
     std::unique_ptr<Service>& service = state.Services[state.ServiceIndices.at(state.ImageDebugSampleType)];
     ImTextureRef texture = service->GetTextureRef(state.ImageDebugSampleType);
     if (texture.GetTexID() != ImTextureID_Invalid)
@@ -267,6 +289,11 @@ static void DrawImage()
         float height = float(texture._TexData->Height);
         float scale = std::min(region.x / width, region.y / height);
         ImGui::Image(texture, ImVec2(width * scale, height * scale));
+        if (results.GetTexture() && results.GetTexture()->GetTexID() != ImTextureID_Invalid)
+        {
+            ImVec2 end(position.x + width * scale, position.y + height * scale);
+            ImGui::GetWindowDrawList()->AddImage(results.GetTexture()->GetTexRef(), position, end);
+        }
         if (ImGui::IsItemHovered())
         {
             ImVec2 mouse = ImGui::GetMousePos();

@@ -30,6 +30,7 @@ add_executable(fire_simulator
     src/fire_fuel_model.cpp
     src/fire_model.cpp
     src/fire_model_logger.cpp
+    src/fire_results.cpp
     src/fire_simulator.cpp
     src/main.cpp
     src/service.cpp
