@@ -14,9 +14,14 @@ static constexpr const char* kURL = "https://esa-worldcover.s3.eu-central-1.amaz
 class ServiceESAWorldCover : public Service
 {
 public:
-    std::string GetName() const override
+    const char* GetName() const override
     {
         return "esa_worldcover";
+    }
+
+    const char* GetDisplayName() const override
+    {
+        return "ESA WorldCover";
     }
 
     ServiceSampleType GetSupportedTypes() const override
@@ -35,14 +40,12 @@ public:
         {
             for (double lon = cornerMinLatLong.y; lon < maxLatLong.y; lon += kTileDegrees)
             {
-                int latValue = lat;
-                int lonValue = lon;
                 urls.push_back(std::format("/vsicurl/{}/ESA_WorldCover_10m_2021_v200_{}{:02d}{}{:03d}_Map.tif",
                     kURL,
-                    latValue >= 0 ? 'N' : 'S',
-                    std::abs(latValue),
-                    lonValue >= 0 ? 'E' : 'W',
-                    std::abs(lonValue)));
+                    int(lat) >= 0 ? 'N' : 'S',
+                    std::abs(int(lat)),
+                    int(lon) >= 0 ? 'E' : 'W',
+                    std::abs(int(lon))));
             }
         }
         return urls;

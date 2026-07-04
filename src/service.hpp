@@ -13,9 +13,6 @@
 
 #include "fire_fuel_model.hpp"
 
-// The declared order is significant. During a download the requested types are
-// processed in ascending bit order, so a derived type (e.g. Slope/Aspect) must be
-// declared AFTER the type it derives from (Elevation) so its source is produced first.
 enum class ServiceSampleType
 {
     FuelModel = 1 << 0,
@@ -32,24 +29,39 @@ enum class ServiceSampleType
     MoistureHundredHour = 1 << 11,
     MoistureLiveHerbaceous = 1 << 12,
     MoistureLiveWoody = 1 << 13,
+    All =
+        FuelModel |
+        Elevation |
+        Slope |
+        Aspect |
+        CanopyCover |
+        CanopyHeight |
+        CrownRatio |
+        WindSpeed |
+        WindDirection |
+        MoistureOneHour |
+        MoistureTenHour |
+        MoistureHundredHour |
+        MoistureLiveHerbaceous |
+        MoistureLiveWoody,
 };
 
-inline ServiceSampleType operator|(ServiceSampleType a, ServiceSampleType b)
+constexpr ServiceSampleType operator|(ServiceSampleType a, ServiceSampleType b)
 {
     return ServiceSampleType(int(a) | int(b));
 }
 
-inline ServiceSampleType operator&(ServiceSampleType a, ServiceSampleType b)
+constexpr ServiceSampleType operator&(ServiceSampleType a, ServiceSampleType b)
 {
     return ServiceSampleType(int(a) & int(b));
 }
 
-inline ServiceSampleType operator~(ServiceSampleType a)
+constexpr ServiceSampleType operator~(ServiceSampleType a)
 {
     return ServiceSampleType(~int(a));
 }
 
-inline ServiceSampleType& operator|=(ServiceSampleType& a, ServiceSampleType b)
+constexpr ServiceSampleType& operator|=(ServiceSampleType& a, ServiceSampleType b)
 {
     return a = a | b;
 }
@@ -91,18 +103,20 @@ class Service
 {
 public:
     virtual ~Service() = default;
-    virtual std::string GetName() const = 0;
+    virtual const char* GetName() const = 0;
+    virtual const char* GetDisplayName() const = 0;
     virtual ServiceSampleType GetSupportedTypes() const = 0;
     virtual ServiceSampleType GetRequiredSampleTypes(ServiceSampleType types) const { return {}; }
+    virtual void RenderImGui() {}
     void Download(ServiceSampleType types, const glm::dvec2& minLatLong, const glm::dvec2& maxLatLong, double resolution);
-    ServicePixel GetPixel(ServiceSampleType type, const glm::dvec2& latLong) const;
-    ServicePixel GetPixel(ServiceSampleType type, int x, int y) const;
+    virtual ServicePixel GetPixel(ServiceSampleType type, const glm::dvec2& latLong) const;
+    virtual ServicePixel GetPixel(ServiceSampleType type, int x, int y) const;
     ImTextureRef GetTextureRef(ServiceSampleType type);
 
 protected:
     std::string GetKey(const std::string& fileName) const;
-    virtual std::vector<std::string> GetSourceURLs(const glm::dvec2& minLatLong, const glm::dvec2& maxLatLong) const = 0;
-    virtual int GetBand(ServiceSampleType type) const = 0;
+    virtual std::vector<std::string> GetSourceURLs(const glm::dvec2& minLatLong, const glm::dvec2& maxLatLong) const { return {}; }
+    virtual int GetBand(ServiceSampleType type) const { return 0; }
     virtual void Derive(ServiceSampleType type, GDALDatasetH lowResolution, const std::string& basePath) {}
     virtual void PostProcess(ServiceSampleType type, std::vector<ServicePixel>& pixels) {}
     void DEMProcessing(GDALDatasetH elevation, const std::string& basePath, ServiceSampleType type);
@@ -131,3 +145,4 @@ protected:
 
 std::unique_ptr<Service> ServiceCreateESAWorldCover();
 std::unique_ptr<Service> ServiceCreateOpenTopography();
+std::unique_ptr<Service> ServiceCreateCustom();

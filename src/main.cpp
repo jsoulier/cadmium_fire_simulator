@@ -8,7 +8,9 @@
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
+#include <format>
 #include <memory>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -24,6 +26,7 @@ struct State
     {
         Services.emplace_back(ServiceCreateESAWorldCover());
         Services.emplace_back(ServiceCreateOpenTopography());
+        Services.emplace_back(ServiceCreateCustom());
         ServiceIndices[ServiceSampleType::FuelModel] = 0;
         ServiceIndices[ServiceSampleType::Elevation] = 1;
         ServiceIndices[ServiceSampleType::Slope] = 1;
@@ -115,7 +118,7 @@ static void Tick()
     ImGui::InputDouble("Resolution (Degrees)", &state.Resolution);
     for (auto& [type, index] : state.ServiceIndices)
     {
-        if (ImGui::BeginCombo(ServiceSampleTypeToString(type), state.Services[index]->GetName().c_str()))
+        if (ImGui::BeginCombo(ServiceSampleTypeToString(type), state.Services[index]->GetDisplayName()))
         {
             for (int i = 0; i < int(state.Services.size()); i++)
             {
@@ -123,8 +126,10 @@ static void Tick()
                 {
                     continue;
                 }
-                const bool selected = index == i;
-                if (ImGui::Selectable(state.Services[i]->GetName().c_str(), selected))
+                std::string selectableLabel = std::format("{}##{}",
+                    state.Services[i]->GetDisplayName(),
+                    ServiceSampleTypeToString(type));
+                if (ImGui::Selectable(selectableLabel.c_str(), index == i))
                 {
                     index = i;
                 }
@@ -143,6 +148,11 @@ static void Tick()
         {
             state.Services[index]->Download(types, state.MinLatLong, state.MaxLatLong, state.Resolution);
         }
+    }
+    for (std::unique_ptr<Service>& service : state.Services)
+    {
+        ImGui::SeparatorText(service->GetDisplayName());
+        service->RenderImGui();
     }
     if (ImGui::Begin("Image Debug"))
     {

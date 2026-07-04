@@ -14,9 +14,14 @@ static constexpr const char* kDEMType = "SRTMGL1";
 class ServiceOpenTopography : public Service
 {
 public:
-    std::string GetName() const override
+    const char* GetName() const override
     {
         return "open_topography";
+    }
+
+    const char* GetDisplayName() const override
+    {
+        return "Open Topography";
     }
 
     ServiceSampleType GetSupportedTypes() const override
