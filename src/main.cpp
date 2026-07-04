@@ -23,7 +23,9 @@ struct State
         , ImageDebugSampleType{ServiceSampleType::FuelModel}
     {
         Services.emplace_back(ServiceCreateESAWorldCover());
+        Services.emplace_back(ServiceCreateOpenTopography());
         ServiceIndices[ServiceSampleType::FuelModel] = 0;
+        ServiceIndices[ServiceSampleType::Elevation] = 1;
     }
 
     glm::dvec2 MinLatLong;
@@ -142,12 +144,16 @@ static void Tick()
     }
     if (ImGui::Begin("Image Debug"))
     {
-        for (const auto& [type, index] : state.ServiceIndices)
+        if (ImGui::BeginCombo("Sample Type", ServiceSampleTypeToString(state.ImageDebugSampleType)))
         {
-            if (ImGui::Selectable(ServiceSampleTypeToString(type), state.ImageDebugSampleType == type))
+            for (const auto& [type, index] : state.ServiceIndices)
             {
-                state.ImageDebugSampleType = type;
+                if (ImGui::Selectable(ServiceSampleTypeToString(type), state.ImageDebugSampleType == type))
+                {
+                    state.ImageDebugSampleType = type;
+                }
             }
+            ImGui::EndCombo();
         }
         if (auto it = state.ServiceIndices.find(state.ImageDebugSampleType); it != state.ServiceIndices.end())
         {

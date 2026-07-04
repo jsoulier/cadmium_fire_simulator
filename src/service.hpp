@@ -74,7 +74,8 @@ public:
     ServicePixel GetPixel(ServiceSampleType type, int x, int y) const;
     ImTextureRef GetTextureRef(ServiceSampleType type);
 
-private:
+protected:
+    std::string GetKey(const std::string& fileName) const;
     virtual std::vector<std::string> GetSourceURLs(const glm::dvec2& minLatLong, const glm::dvec2& maxLatLong) const = 0;
     virtual int GetBand(ServiceSampleType type) const = 0;
     virtual void PostProcess(ServiceSampleType type, std::vector<ServicePixel>& pixels) {}
@@ -102,3 +103,4 @@ private:
 };
 
 std::unique_ptr<Service> ServiceCreateESAWorldCover();
+std::unique_ptr<Service> ServiceCreateOpenTopography();

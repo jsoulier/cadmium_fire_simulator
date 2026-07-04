@@ -34,6 +34,7 @@ add_executable(fire_simulator
     src/main.cpp
     src/service.cpp
     src/service_esa_worldcover.cpp
+    src/service_open_topography.cpp
 )
 target_include_directories(fire_simulator PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(fire_simulator PRIVATE
