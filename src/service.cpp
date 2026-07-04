@@ -278,6 +278,19 @@ ServicePixel Service::GetPixel(ServiceSampleType type, int x, int y) const
     return raster.Pixels[size_t(y) * raster.Width + x];
 }
 
+glm::ivec2 Service::GetSize(ServiceSampleType type) const
+{
+    const auto it = Rasters.find(type);
+    if (it != Rasters.end())
+    {
+        return glm::ivec2(it->second.Width, it->second.Height);
+    }
+    else
+    {
+        return glm::ivec2(0);
+    }
+}
+
 ImTextureRef Service::GetTextureRef(ServiceSampleType type)
 {
     const auto it = Rasters.find(type);

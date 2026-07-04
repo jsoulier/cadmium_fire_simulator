@@ -111,6 +111,7 @@ public:
     void Download(ServiceSampleType types, const glm::dvec2& minLatLong, const glm::dvec2& maxLatLong, double resolution);
     virtual ServicePixel GetPixel(ServiceSampleType type, const glm::dvec2& latLong) const;
     virtual ServicePixel GetPixel(ServiceSampleType type, int x, int y) const;
+    glm::ivec2 GetSize(ServiceSampleType type) const;
     ImTextureRef GetTextureRef(ServiceSampleType type);
 
 protected:
