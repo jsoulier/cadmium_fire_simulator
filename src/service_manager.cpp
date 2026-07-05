@@ -1,0 +1,165 @@
+#include <SDL3/SDL.h>
+#include <geo_names_imgui.hpp>
+#include <glm/glm.hpp>
+#include <imgui.h>
+
+#include <filesystem>
+#include <memory>
+
+#include "service_manager.hpp"
+
+static const std::filesystem::path kBasePath = SDL_GetBasePath();
+static const std::filesystem::path kFireSimulatorPath = kBasePath / "fire_simulator_results.csv";
+static constexpr double kMetresPerDegree = 111320.0;
+
+ServiceManager::ServiceManager()
+    : MinLatLong{45.30, -75.85}
+    , MaxLatLong{45.50, -75.55}
+    , Resolution{0.001f}
+{
+    Services.emplace_back(ServiceCreateNRCan());
+    Services.emplace_back(ServiceCreateESAWorldCover());
+    Services.emplace_back(ServiceCreateOpenTopography());
+    Services.emplace_back(ServiceCreateCustom());
+    for (int i = 0; i < 32; i++)
+    {
+        const ServiceSampleType type = ServiceSampleType(1 << i);
+        if ((ServiceSampleType::All & type) != ServiceSampleType{})
+        {
+            ServiceIndices[type] = 3;
+        }
+    }
+    ServiceIndices[ServiceSampleType::FuelModel] = 0;
+    ServiceIndices[ServiceSampleType::Elevation] = 2;
+    ServiceIndices[ServiceSampleType::Slope] = 2;
+    ServiceIndices[ServiceSampleType::Aspect] = 2;
+}
+
+std::unique_ptr<Service>& ServiceManager::GetService(ServiceSampleType type)
+{
+    return Services[ServiceIndices.at(type)];
+}
+
+void ServiceManager::RenderImGui()
+{
+    // TODO: ImGui::BeginDisabled
+    if (std::optional<GeoNames> location = GetImGuiGeoNames())
+    {
+        const glm::dvec2 extent = (MaxLatLong - MinLatLong) * 0.5;
+        const glm::dvec2 center{location->Latitude, location->Longitude};
+        MinLatLong = center - extent;
+        MaxLatLong = center + extent;
+    }
+    ImGui::InputDouble("Min Latitude", &MinLatLong.x);
+    ImGui::InputDouble("Min Longitude", &MinLatLong.y);
+    ImGui::InputDouble("Max Latitude", &MaxLatLong.x);
+    ImGui::InputDouble("Max Longitude", &MaxLatLong.y);
+    ImGui::InputDouble("Resolution (Degrees)", &Resolution);
+    for (auto& [type, index] : ServiceIndices)
+    {
+        if (ImGui::BeginCombo(ServiceSampleTypeToString(type), Services[index]->GetDisplayName()))
+        {
+            for (int i = 0; i < Services.size(); i++)
+            {
+                if ((Services[i]->GetSupportedTypes() & type) == ServiceSampleType{})
+                {
+                    continue;
+                }
+                std::string selectableLabel = std::format("{}##{}",
+                    Services[i]->GetDisplayName(),
+                    ServiceSampleTypeToString(type));
+                if (ImGui::Selectable(selectableLabel.c_str(), index == i))
+                {
+                    index = i;
+                }
+            }
+            ImGui::EndCombo();
+        }
+    }
+    for (std::unique_ptr<Service>& service : Services)
+    {
+        if (ImGui::TreeNode(service->GetDisplayName()))
+        {
+            service->RenderImGui();
+            ImGui::TreePop();
+        }
+    }
+}
+
+void ServiceManager::SetParams(FireSimulatorParams& params) const
+{
+    auto getPixel = [this](ServiceSampleType type) -> std::function<float(int, int)>
+    {
+        const std::unique_ptr<Service>& service = Services[ServiceIndices.at(type)];
+        return [&service, type](int x, int y)
+        {
+            return service->GetPixel(type, x, y).F32;
+        };
+    };
+    const std::unique_ptr<Service>& fuelService = Services[ServiceIndices.at(ServiceSampleType::FuelModel)];
+    glm::ivec2 size = fuelService->GetSize(ServiceSampleType::FuelModel);
+    glm::dvec2 min = MinLatLong;
+    glm::dvec2 max = MaxLatLong;
+    SDL_assert(size.x > 0 && size.y > 0);
+    params.Width = size.x;
+    params.Height = size.y;
+    params.Resolution = Resolution * kMetresPerDegree;
+    params.FuelModel = [&fuelService](int x, int y)
+    {
+        return FireFuelModelType(fuelService->GetPixel(ServiceSampleType::FuelModel, x, y).U32);
+    };
+    params.Longitude = [min, max, size](int x, int)
+    {
+        return min.y + (x + 0.5) / size.x * (max.y - min.y);
+    };
+    params.Latitude = [min, max, size](int, int y)
+    {
+        return max.x - (y + 0.5) / size.y * (max.x - min.x);
+    };
+    params.Elevation = getPixel(ServiceSampleType::Elevation);
+    params.Slope = getPixel(ServiceSampleType::Slope);
+    params.Aspect = getPixel(ServiceSampleType::Aspect);
+    params.CanopyCover = getPixel(ServiceSampleType::CanopyCover);
+    params.CanopyHeight = getPixel(ServiceSampleType::CanopyHeight);
+    params.CrownRatio = getPixel(ServiceSampleType::CrownRatio);
+    params.WindSpeed = getPixel(ServiceSampleType::WindSpeed);
+    params.WindDirection = getPixel(ServiceSampleType::WindDirection);
+    params.MoistureOneHour = getPixel(ServiceSampleType::MoistureOneHour);
+    params.MoistureTenHour = getPixel(ServiceSampleType::MoistureTenHour);
+    params.MoistureHundredHour = getPixel(ServiceSampleType::MoistureHundredHour);
+    params.MoistureLiveHerbaceous = getPixel(ServiceSampleType::MoistureLiveHerbaceous);
+    params.MoistureLiveWoody = getPixel(ServiceSampleType::MoistureLiveWoody);
+    params.OutPath = kFireSimulatorPath.string();
+}
+
+void ServiceManager::Download(Worker& worker)
+{
+    ServiceIndicesToTypes.clear();
+    for (const auto& [type, index] : ServiceIndices)
+    {
+        ServiceIndicesToTypes[index] |= type;
+    }
+    for (const auto& [index, types] : ServiceIndicesToTypes)
+    {
+        worker.Submit([&]()
+        {
+            Services[index]->Download(types, MinLatLong, MaxLatLong, Resolution);
+        });
+    }
+}
+
+Future<FireResults> ServiceManager::Simulate(Worker& worker, FireSimulatorParams& params)
+{
+    return worker.Submit([this, inParams = params]()
+    {
+        FireResults results;
+        FireSimulatorParams params = inParams;
+        SetParams(params);
+        if (!FireSimulatorRun(params))
+        {
+            return results;
+        }
+        results.Load(params.OutPath, {params.Width, params.Height});
+        return results;
+    });
+}

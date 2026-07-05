@@ -28,59 +28,21 @@
 #include "fire_results.hpp"
 #include "fire_simulator.hpp"
 #include "future.hpp"
-#include "service.hpp"
+#include "service_manager.hpp"
 #include "worker.hpp"
-
-static const std::filesystem::path kBasePath = SDL_GetBasePath();
-static const std::filesystem::path kFireSimulatorPath = kBasePath / "fire_simulator_results.csv";
-static constexpr double kMetresPerDegree = 111320.0;
-
-struct State
-{
-    State()
-        : MinLatLong{45.30, -75.85}
-        , MaxLatLong{45.50, -75.55}
-        , Resolution{0.001f}
-        , CoordinatorType{FireSimulatorCoordinatorType::EventDriven}
-        , Ignition{0, 0}
-        , ImageDebugSampleType{ServiceSampleType::FuelModel}
-    {
-        Services.emplace_back(ServiceCreateESAWorldCover());
-        Services.emplace_back(ServiceCreateOpenTopography());
-        Services.emplace_back(ServiceCreateCustom());
-        for (int i = 0; i < 32; i++)
-        {
-            const ServiceSampleType type = ServiceSampleType(1 << i);
-            if ((ServiceSampleType::All & type) != ServiceSampleType{})
-            {
-                ServiceIndices[type] = 2;
-            }
-        }
-        ServiceIndices[ServiceSampleType::FuelModel] = 0;
-        ServiceIndices[ServiceSampleType::Elevation] = 1;
-        ServiceIndices[ServiceSampleType::Slope] = 1;
-        ServiceIndices[ServiceSampleType::Aspect] = 1;
-    }
-
-    std::vector<std::unique_ptr<Service>> Services;
-    ankerl::unordered_dense::map<ServiceSampleType, int> ServiceIndices;
-    glm::dvec2 MinLatLong;
-    glm::dvec2 MaxLatLong;
-    double Resolution;
-    FireSimulatorCoordinatorType CoordinatorType;
-    glm::ivec2 Ignition;
-    ServiceSampleType ImageDebugSampleType;
-};
 
 static SDL_Window* window;
 static SDL_Renderer* renderer;
 static Console console;
-static State state;
+static ServiceManager serviceManager;
 static Worker worker;
-static Future<FireResults> pendingResults;
 static std::vector<FireResults> results;
-static int currentResult = -1;
-static float resultsTime;
+static Future<FireResults> pendingResults;
+static int resultsIndex = -1;
+static float resultsTimestamp;
+static ServiceSampleType imageDebugSampleType = ServiceSampleType::FuelModel;
+static glm::ivec2 ignition;
+static FireSimulatorCoordinatorType coordinator = FireSimulatorCoordinatorType::EventDriven;
 
 static bool Init()
 {
@@ -105,7 +67,7 @@ static bool Init()
 
 static void Quit()
 {
-    state = {};
+    serviceManager = {};
     ImGui_ImplSDLRenderer3_Shutdown();
     ImGui_ImplSDL3_Shutdown();
     ImGui::DestroyContext();
@@ -144,128 +106,28 @@ static bool Poll()
 
 static void Download()
 {
-    ankerl::unordered_dense::map<int, ServiceSampleType> serviceIndicesToTypes;
-    for (const auto& [type, index] : state.ServiceIndices)
-    {
-        serviceIndicesToTypes[index] |= type;
-    }
-    for (const auto& [index, types] : serviceIndicesToTypes)
-    {
-        state.Services[index]->Download(types, state.MinLatLong, state.MaxLatLong, state.Resolution);
-    }
+    serviceManager.Download(worker);
 }
 
 static void Simulate()
 {
-    auto getPixel = [](ServiceSampleType type) -> std::function<float(int, int)>
-    {
-        int index = state.ServiceIndices.at(type);
-        Service* service = state.Services[index].get();
-        return [service, type](int x, int y)
-        {
-            return service->GetPixel(type, x, y).F32;
-        };
-    };
-    int fuelIndex = state.ServiceIndices.at(ServiceSampleType::FuelModel);
-    Service* fuelService = state.Services[fuelIndex].get();
-    glm::ivec2 size = fuelService->GetSize(ServiceSampleType::FuelModel);
-    SDL_assert(size.x > 0 && size.y > 0);
     FireSimulatorParams params;
-    params.Width = size.x;
-    params.Height = size.y;
-    params.Resolution = float(state.Resolution * kMetresPerDegree);
-    params.CoordinatorType = state.CoordinatorType;
-    const glm::dvec2 min = state.MinLatLong;
-    const glm::dvec2 max = state.MaxLatLong;
-    params.Igniting = [ignition = state.Ignition](int x, int y)
+    params.CoordinatorType = coordinator;
+    params.Igniting = [](int x, int y)
     {
         return x == ignition.x && y == ignition.y;
     };
-    params.FuelModel = [fuelService](int x, int y)
-    {
-        return FireFuelModelType(fuelService->GetPixel(ServiceSampleType::FuelModel, x, y).U32);
-    };
-    params.Longitude = [min, max, size](int x, int)
-    {
-        return min.y + (x + 0.5) / size.x * (max.y - min.y);
-    };
-    params.Latitude = [min, max, size](int, int y)
-    {
-        return max.x - (y + 0.5) / size.y * (max.x - min.x);
-    };
-    params.Elevation = getPixel(ServiceSampleType::Elevation);
-    params.Slope = getPixel(ServiceSampleType::Slope);
-    params.Aspect = getPixel(ServiceSampleType::Aspect);
-    params.CanopyCover = getPixel(ServiceSampleType::CanopyCover);
-    params.CanopyHeight = getPixel(ServiceSampleType::CanopyHeight);
-    params.CrownRatio = getPixel(ServiceSampleType::CrownRatio);
-    params.WindSpeed = getPixel(ServiceSampleType::WindSpeed);
-    params.WindDirection = getPixel(ServiceSampleType::WindDirection);
-    params.MoistureOneHour = getPixel(ServiceSampleType::MoistureOneHour);
-    params.MoistureTenHour = getPixel(ServiceSampleType::MoistureTenHour);
-    params.MoistureHundredHour = getPixel(ServiceSampleType::MoistureHundredHour);
-    params.MoistureLiveHerbaceous = getPixel(ServiceSampleType::MoistureLiveHerbaceous);
-    params.MoistureLiveWoody = getPixel(ServiceSampleType::MoistureLiveWoody);
-    params.OutPath = kFireSimulatorPath.string();
-    pendingResults = worker.Submit([params = std::move(params)]()
-    {
-        FireResults result;
-        if (FireSimulatorRun(params))
-        {
-            result.Load(params.OutPath, {params.Width, params.Height});
-        }
-        return result;
-    });
+    pendingResults = serviceManager.Simulate(worker, params);
 }
 
 static void DrawGeneral()
 {
-    if (std::optional<GeoNames> location = GetImGuiGeoNames())
+    static constexpr int kMaxCoordinators = SDL_arraysize(kFireSimulatorCoordinatorTypeStrings);
+    int coordinatorIndex = int(coordinator);
+    serviceManager.RenderImGui();
+    if (ImGui::Combo("Coordinator", &coordinatorIndex, kFireSimulatorCoordinatorTypeStrings, kMaxCoordinators))
     {
-        const glm::dvec2 extent = (state.MaxLatLong - state.MinLatLong) * 0.5;
-        const glm::dvec2 center{location->Latitude, location->Longitude};
-        state.MinLatLong = center - extent;
-        state.MaxLatLong = center + extent;
-    }
-    ImGui::InputDouble("Min Latitude", &state.MinLatLong.x);
-    ImGui::InputDouble("Min Longitude", &state.MinLatLong.y);
-    ImGui::InputDouble("Max Latitude", &state.MaxLatLong.x);
-    ImGui::InputDouble("Max Longitude", &state.MaxLatLong.y);
-    ImGui::InputDouble("Resolution (Degrees)", &state.Resolution);
-    for (auto& [type, index] : state.ServiceIndices)
-    {
-        if (ImGui::BeginCombo(ServiceSampleTypeToString(type), state.Services[index]->GetDisplayName()))
-        {
-            for (int i = 0; i < int(state.Services.size()); i++)
-            {
-                if ((state.Services[i]->GetSupportedTypes() & type) == ServiceSampleType{})
-                {
-                    continue;
-                }
-                std::string selectableLabel = std::format("{}##{}",
-                    state.Services[i]->GetDisplayName(),
-                    ServiceSampleTypeToString(type));
-                if (ImGui::Selectable(selectableLabel.c_str(), index == i))
-                {
-                    index = i;
-                }
-            }
-            ImGui::EndCombo();
-        }
-    }
-    for (std::unique_ptr<Service>& service : state.Services)
-    {
-        if (ImGui::TreeNode(service->GetDisplayName()))
-        {
-            service->RenderImGui();
-            ImGui::TreePop();
-        }
-    }
-    const char* coordinators[] = { "Event Driven", "Brute Force" };
-    int coordinator = int(state.CoordinatorType);
-    if (ImGui::Combo("Coordinator", &coordinator, coordinators, SDL_arraysize(coordinators)))
-    {
-        state.CoordinatorType = FireSimulatorCoordinatorType(coordinator);
+        coordinator = FireSimulatorCoordinatorType(coordinatorIndex);
     }
     ImGui::BeginDisabled(worker.IsRunning());
     if (ImGui::Button("Download"))
@@ -282,57 +144,40 @@ static void DrawGeneral()
 
 static void DrawImage()
 {
-    if (ImGui::BeginCombo("Sample Type", ServiceSampleTypeToString(state.ImageDebugSampleType)))
+    static constexpr int kMaxImageTypes = SDL_arraysize(kServiceSampleTypeStrings);
+    int debugSampleTypeIndex = ServiceSampleTypeToIndex(imageDebugSampleType);
+    if (ImGui::Combo("Image Type", &debugSampleTypeIndex, kServiceSampleTypeStrings, kMaxImageTypes))
     {
-        for (const auto& [type, index] : state.ServiceIndices)
-        {
-            if (ImGui::Selectable(ServiceSampleTypeToString(type), state.ImageDebugSampleType == type))
-            {
-                state.ImageDebugSampleType = type;
-            }
-        }
-        ImGui::EndCombo();
+        imageDebugSampleType = ServiceSampleTypeFromIndex(debugSampleTypeIndex);
     }
-    ImGui::BeginDisabled(worker.IsRunning());
-    if (ImGui::Button("Load Results"))
-    {
-        glm::ivec2 size = state.Services[state.ServiceIndices.at(ServiceSampleType::FuelModel)]->GetSize(ServiceSampleType::FuelModel);
-        pendingResults = worker.Submit([size]()
-        {
-            FireResults result;
-            result.Load(kFireSimulatorPath, size);
-            return result;
-        });
-    }
-    ImGui::EndDisabled();
     ImGui::BeginChild("Results", ImVec2(140.0f, 0.0f), ImGuiChildFlags_Borders | ImGuiChildFlags_ResizeX);
     for (int i = 0; i < int(results.size()); i++)
     {
         std::string label = std::format("Result {}", i);
-        if (ImGui::Selectable(label.c_str(), currentResult == i))
+        if (ImGui::Selectable(label.c_str(), resultsIndex == i))
         {
-            currentResult = i;
-            resultsTime = results[i].GetMaxTime();
-            results[i].Update(resultsTime);
+            resultsIndex = i;
+            resultsTimestamp = results[i].GetMaxTime();
+            results[i].Update(resultsTimestamp);
         }
     }
     ImGui::EndChild();
     ImGui::SameLine();
     ImGui::BeginGroup();
     FireResults* current = nullptr;
-    if (currentResult >= 0 && currentResult < int(results.size()))
+    if (resultsIndex >= 0 && resultsIndex < int(results.size()))
     {
-        current = &results[currentResult];
+        current = &results[resultsIndex];
     }
-    if (current && current->GetMaxTime() > 0.0f)
+    if (current)
     {
-        if (ImGui::SliderFloat("Time", &resultsTime, 0.0f, current->GetMaxTime()))
+        if (ImGui::SliderFloat("Time", &resultsTimestamp, 0.0f, current->GetMaxTime()))
         {
-            current->Update(resultsTime);
+            current->Update(resultsTimestamp);
         }
     }
-    std::unique_ptr<Service>& service = state.Services[state.ServiceIndices.at(state.ImageDebugSampleType)];
-    ImTextureRef texture = service->GetTextureRef(state.ImageDebugSampleType);
+    std::unique_ptr<Service>& service = serviceManager.GetService(imageDebugSampleType);
+    ImTextureRef texture = service->GetTextureRef(imageDebugSampleType);
     if (texture.GetTexID() != ImTextureID_Invalid)
     {
         const ImVec2 position = ImGui::GetCursorScreenPos();
@@ -353,10 +198,10 @@ static void DrawImage()
             int y = (mouse.y - position.y) / scale;
             if (ImGui::IsMouseClicked(ImGuiMouseButton_Right))
             {
-                state.Ignition = {x, y};
+                ignition = {x, y};
             }
-            ServicePixel pixel = service->GetPixel(state.ImageDebugSampleType, x, y);
-            ServicePixelType pixelType = ServiceSampleTypeToPixelType(state.ImageDebugSampleType);
+            ServicePixel pixel = service->GetPixel(imageDebugSampleType, x, y);
+            ServicePixelType pixelType = ServiceSampleTypeToPixelType(imageDebugSampleType);
             if (pixelType == ServicePixelType::U32)
             {
                 ImGui::SetTooltip("%u", pixel.U32);
@@ -370,32 +215,27 @@ static void DrawImage()
                 SDL_assert(false);
             }
         }
-        if (state.Ignition.x >= 0 && state.Ignition.x < int(width) &&
-            state.Ignition.y >= 0 && state.Ignition.y < int(height))
+        if (ignition.x >= 0 && ignition.x < int(width) &&
+            ignition.y >= 0 && ignition.y < int(height))
         {
             ImVec2 origin(
-                position.x + (state.Ignition.x + 0.5f) * scale,
-                position.y + (state.Ignition.y + 0.5f) * scale);
+                position.x + (ignition.x + 0.5f) * scale,
+                position.y + (ignition.y + 0.5f) * scale);
             ImGui::GetWindowDrawList()->AddCircleFilled(origin, 4.0f, IM_COL32(255, 0, 0, 255));
         }
     }
     ImGui::EndGroup();
 }
 
-static void PollWorker()
+static void Tick()
 {
     if (pendingResults.IsReady())
     {
         results.push_back(pendingResults.Get());
-        currentResult = int(results.size()) - 1;
-        resultsTime = results[currentResult].GetMaxTime();
-        results[currentResult].Update(resultsTime);
+        resultsIndex = int(results.size()) - 1;
+        resultsTimestamp = results[resultsIndex].GetMaxTime();
+        results[resultsIndex].Update(resultsTimestamp);
     }
-}
-
-static void Tick()
-{
-    PollWorker();
     ImGui_ImplSDLRenderer3_NewFrame();
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();

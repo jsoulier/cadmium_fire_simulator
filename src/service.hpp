@@ -46,6 +46,24 @@ enum class ServiceSampleType
         MoistureLiveWoody,
 };
 
+static constexpr const char* kServiceSampleTypeStrings[] =
+{
+    "Fuel Model",
+    "Elevation",
+    "Slope",
+    "Aspect",
+    "Canopy Cover",
+    "Canopy Height",
+    "Crown Ratio",
+    "Wind Speed",
+    "Wind Direction",
+    "Moisture 1 Hour",
+    "Moisture 10 Hour",
+    "Moisture 100 Hour",
+    "Moisture Live Herbaceous",
+    "Moisture Live Woody",
+};
+
 constexpr ServiceSampleType operator|(ServiceSampleType a, ServiceSampleType b)
 {
     return ServiceSampleType(int(a) | int(b));
@@ -96,6 +114,8 @@ enum class ServicePixelType
     U32,
 };
 
+uint32_t ServiceSampleTypeToIndex(ServiceSampleType type);
+ServiceSampleType ServiceSampleTypeFromIndex(uint32_t index);
 const char* ServiceSampleTypeToString(ServiceSampleType type);
 ServicePixelType ServiceSampleTypeToPixelType(ServiceSampleType type);
 
@@ -145,5 +165,6 @@ protected:
 };
 
 std::unique_ptr<Service> ServiceCreateESAWorldCover();
+std::unique_ptr<Service> ServiceCreateNRCan();
 std::unique_ptr<Service> ServiceCreateOpenTopography();
 std::unique_ptr<Service> ServiceCreateCustom();

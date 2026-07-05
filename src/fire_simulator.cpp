@@ -146,7 +146,7 @@ bool FireSimulatorRun(const FireSimulatorParams& params)
     }
     catch (const std::exception& e)
     {
-        spdlog::info("fire simulation failed: {}", e.what());
+        spdlog::info("Fire simulation failed: {}", e.what());
         return false;
     }
     return true;

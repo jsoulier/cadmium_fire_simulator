@@ -14,6 +14,12 @@ enum class FireSimulatorCoordinatorType
     BruteForce,  // cells are computed each frame
 };
 
+static constexpr const char* kFireSimulatorCoordinatorTypeStrings[] =
+{
+    "Brute Force",
+    "Event Driven",
+};
+
 NLOHMANN_JSON_SERIALIZE_ENUM(FireSimulatorCoordinatorType, {
     {FireSimulatorCoordinatorType::EventDriven, "EventDriven"},
     {FireSimulatorCoordinatorType::BruteForce, "BruteForce"},

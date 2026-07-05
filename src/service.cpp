@@ -1,6 +1,8 @@
 #include <SDL3/SDL.h>
+#include <cpl_conv.h>
 #include <gdal.h>
 #include <gdal_utils.h>
+#include <gdalwarper.h>
 #include <imgui.h>
 #include <imgui_internal.h>
 #include <ogr_srs_api.h>
@@ -20,26 +22,19 @@
 
 #include "service.hpp"
 
+uint32_t ServiceSampleTypeToIndex(ServiceSampleType type)
+{
+    return std::countr_zero(uint32_t(type));
+}
+
+ServiceSampleType ServiceSampleTypeFromIndex(uint32_t index)
+{
+    return ServiceSampleType(1 << index);
+}
+
 const char* ServiceSampleTypeToString(ServiceSampleType type)
 {
-    switch (type)
-    {
-    case ServiceSampleType::FuelModel: return "Fuel Model";
-    case ServiceSampleType::Elevation: return "Elevation";
-    case ServiceSampleType::Slope: return "Slope";
-    case ServiceSampleType::Aspect: return "Aspect";
-    case ServiceSampleType::CanopyCover: return "Canopy Cover";
-    case ServiceSampleType::CanopyHeight: return "Canopy Height";
-    case ServiceSampleType::CrownRatio: return "Crown Ratio";
-    case ServiceSampleType::WindSpeed: return "Wind Speed";
-    case ServiceSampleType::WindDirection: return "Wind Direction";
-    case ServiceSampleType::MoistureOneHour: return "Moisture 1 Hour";
-    case ServiceSampleType::MoistureTenHour: return "Moisture 10 Hour";
-    case ServiceSampleType::MoistureHundredHour: return "Moisture 100 Hour";
-    case ServiceSampleType::MoistureLiveHerbaceous: return "Moisture Live Herbaceous";
-    case ServiceSampleType::MoistureLiveWoody: return "Moisture Live Woody";
-    }
-    return "Unknown";
+    return kServiceSampleTypeStrings[ServiceSampleTypeToIndex(type)];
 }
 
 ServicePixelType ServiceSampleTypeToPixelType(ServiceSampleType type)
@@ -63,6 +58,8 @@ void Service::Download(ServiceSampleType types, const glm::dvec2& minLatLong, co
     GDALAllRegister();
     const char* projPath[] = { SDL_GetBasePath(), nullptr };
     OSRSetPROJSearchPaths(projPath);
+    CPLSetConfigOption("GDAL_INGESTED_BYTES_AT_OPEN", "1000000");
+    CPLSetConfigOption("GDAL_HTTP_MULTIRANGE", "SERIAL");
     ////////////////////////////////////////////////////////////////////////////
     // Download and cache the GeoTIFF. Use a VRT to assemble multiple tiles and clip them to the desired region
     std::filesystem::path basePath = SDL_GetBasePath();
@@ -98,6 +95,33 @@ void Service::Download(ServiceSampleType types, const glm::dvec2& minLatLong, co
             spdlog::error("Failed to build VRT for {}: {}", GetName(), CPLGetLastErrorMsg());
             return;
         }
+        GDALDatasetH source = vrt;
+        GDALDatasetH warped = nullptr;
+        const char* sourceWkt = GDALGetProjectionRef(vrt);
+        if (sourceWkt && sourceWkt[0])
+        {
+            OGRSpatialReferenceH wgs84 = OSRNewSpatialReference(nullptr);
+            OSRImportFromEPSG(wgs84, 4326);
+            OSRSetAxisMappingStrategy(wgs84, OAMS_TRADITIONAL_GIS_ORDER);
+            OGRSpatialReferenceH sourceSrs = OSRNewSpatialReference(sourceWkt);
+            if (!OSRIsSame(sourceSrs, wgs84))
+            {
+                char* wgs84Wkt = nullptr;
+                OSRExportToWkt(wgs84, &wgs84Wkt);
+                warped = GDALAutoCreateWarpedVRT(vrt, nullptr, wgs84Wkt, GRA_NearestNeighbour, 0.0, nullptr);
+                CPLFree(wgs84Wkt);
+                if (warped)
+                {
+                    source = warped;
+                }
+                else
+                {
+                    spdlog::error("Failed to reproject {} to EPSG:4326: {}", GetName(), CPLGetLastErrorMsg());
+                }
+            }
+            OSRDestroySpatialReference(sourceSrs);
+            OSRDestroySpatialReference(wgs84);
+        }
         const std::string minX = std::format("{}", minLatLong.y);
         const std::string minY = std::format("{}", maxLatLong.x);
         const std::string maxX = std::format("{}", maxLatLong.y);
@@ -109,7 +133,7 @@ void Service::Download(ServiceSampleType types, const glm::dvec2& minLatLong, co
             nullptr
         };
         GDALTranslateOptions* options = GDALTranslateOptionsNew(const_cast<char**>(args), nullptr);
-        GDALDatasetH dataset = GDALTranslate(filePath.string().c_str(), vrt, options, nullptr);
+        GDALDatasetH dataset = GDALTranslate(filePath.string().c_str(), source, options, nullptr);
         if (!dataset)
         {
             spdlog::error("Failed to translate to {} for {}: {}", filePath.string(), GetName(), CPLGetLastErrorMsg());
@@ -119,6 +143,10 @@ void Service::Download(ServiceSampleType types, const glm::dvec2& minLatLong, co
             GDALClose(dataset);
         }
         GDALTranslateOptionsFree(options);
+        if (warped)
+        {
+            GDALClose(warped);
+        }
         GDALClose(vrt);
         VSIUnlink(vrtPath);
     }

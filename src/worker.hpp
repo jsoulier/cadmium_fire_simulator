@@ -13,6 +13,7 @@
 
 #include "future.hpp"
 
+// TODO: parallel jobs
 class Worker
 {
 public:

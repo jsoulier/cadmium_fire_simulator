@@ -38,6 +38,8 @@ add_executable(fire_simulator
     src/service.cpp
     src/service_custom.cpp
     src/service_esa_worldcover.cpp
+    src/service_manager.cpp
+    src/service_nrcan.cpp
     src/service_open_topography.cpp
     src/worker.cpp
 )
