@@ -41,6 +41,7 @@ add_executable(fire_simulator
     src/service_manager.cpp
     src/service_nrcan.cpp
     src/service_open_topography.cpp
+    src/timer.cpp
     src/worker.cpp
 )
 target_include_directories(fire_simulator PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)

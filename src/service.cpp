@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "service.hpp"
+#include "timer.hpp"
 
 uint32_t ServiceSampleTypeToIndex(ServiceSampleType type)
 {
@@ -53,6 +54,7 @@ Service::Raster::Raster()
 
 void Service::Download(ServiceSampleType types, const glm::dvec2& minLatLong, const glm::dvec2& maxLatLong, double resolution)
 {
+    TimerBlock(std::format("{} download", GetName()));
     types |= GetRequiredSampleTypes(types);
     SDL_assert((types & ~GetSupportedTypes()) == ServiceSampleType{});
     GDALAllRegister();
@@ -71,6 +73,7 @@ void Service::Download(ServiceSampleType types, const glm::dvec2& minLatLong, co
         maxLatLong.y);
     if (!std::filesystem::exists(filePath))
     {
+        TimerBlock(std::format("{} download source", GetName()));
         std::vector<std::string> sources = GetSourceURLs(minLatLong, maxLatLong);
         if (sources.empty())
         {
@@ -95,8 +98,9 @@ void Service::Download(ServiceSampleType types, const glm::dvec2& minLatLong, co
             spdlog::error("Failed to build VRT for {}: {}", GetName(), CPLGetLastErrorMsg());
             return;
         }
-        GDALDatasetH source = vrt;
-        GDALDatasetH warped = nullptr;
+        ////////////////////////////////////////////////////////////////////////
+        // Check if the tile is in EPSG:4326 (WGS 84) (uses lat/long). If not, convert it to EPSG:4326
+        bool isWgs84 = false;
         const char* sourceWkt = GDALGetProjectionRef(vrt);
         if (sourceWkt && sourceWkt[0])
         {
@@ -104,48 +108,56 @@ void Service::Download(ServiceSampleType types, const glm::dvec2& minLatLong, co
             OSRImportFromEPSG(wgs84, 4326);
             OSRSetAxisMappingStrategy(wgs84, OAMS_TRADITIONAL_GIS_ORDER);
             OGRSpatialReferenceH sourceSrs = OSRNewSpatialReference(sourceWkt);
-            if (!OSRIsSame(sourceSrs, wgs84))
-            {
-                char* wgs84Wkt = nullptr;
-                OSRExportToWkt(wgs84, &wgs84Wkt);
-                warped = GDALAutoCreateWarpedVRT(vrt, nullptr, wgs84Wkt, GRA_NearestNeighbour, 0.0, nullptr);
-                CPLFree(wgs84Wkt);
-                if (warped)
-                {
-                    source = warped;
-                }
-                else
-                {
-                    spdlog::error("Failed to reproject {} to EPSG:4326: {}", GetName(), CPLGetLastErrorMsg());
-                }
-            }
+            isWgs84 = OSRIsSame(sourceSrs, wgs84);
             OSRDestroySpatialReference(sourceSrs);
             OSRDestroySpatialReference(wgs84);
         }
-        const std::string minX = std::format("{}", minLatLong.y);
-        const std::string minY = std::format("{}", maxLatLong.x);
-        const std::string maxX = std::format("{}", maxLatLong.y);
-        const std::string maxY = std::format("{}", minLatLong.x);
-        const char* args[] =
+        const std::string west = std::format("{}", minLatLong.y);
+        const std::string south = std::format("{}", minLatLong.x);
+        const std::string east = std::format("{}", maxLatLong.y);
+        const std::string north = std::format("{}", maxLatLong.x);
+        if (isWgs84)
         {
-            "-projwin", minX.c_str(), minY.c_str(), maxX.c_str(), maxY.c_str(),
-            "-projwin_srs", "EPSG:4326",
-            nullptr
-        };
-        GDALTranslateOptions* options = GDALTranslateOptionsNew(const_cast<char**>(args), nullptr);
-        GDALDatasetH dataset = GDALTranslate(filePath.string().c_str(), source, options, nullptr);
-        if (!dataset)
-        {
-            spdlog::error("Failed to translate to {} for {}: {}", filePath.string(), GetName(), CPLGetLastErrorMsg());
+            TimerBlock(std::format("{} source clip", GetName()));
+            const char* args[] =
+            {
+                "-projwin", west.c_str(), north.c_str(), east.c_str(), south.c_str(),
+                "-projwin_srs", "EPSG:4326",
+                nullptr
+            };
+            GDALTranslateOptions* options = GDALTranslateOptionsNew(const_cast<char**>(args), nullptr);
+            GDALDatasetH dataset = GDALTranslate(filePath.string().c_str(), vrt, options, nullptr);
+            if (!dataset)
+            {
+                spdlog::error("Failed to translate to {} for {}: {}", filePath.string(), GetName(), CPLGetLastErrorMsg());
+            }
+            else
+            {
+                GDALClose(dataset);
+            }
+            GDALTranslateOptionsFree(options);
         }
         else
         {
-            GDALClose(dataset);
-        }
-        GDALTranslateOptionsFree(options);
-        if (warped)
-        {
-            GDALClose(warped);
+            TimerBlock(std::format("{} source clip and reproject", GetName()));
+            const char* args[] =
+            {
+                "-t_srs", "EPSG:4326",
+                "-te", west.c_str(), south.c_str(), east.c_str(), north.c_str(),
+                "-r", "near",
+                nullptr
+            };
+            GDALWarpAppOptions* options = GDALWarpAppOptionsNew(const_cast<char**>(args), nullptr);
+            GDALDatasetH dataset = GDALWarp(filePath.string().c_str(), nullptr, 1, &vrt, options, nullptr);
+            if (!dataset)
+            {
+                spdlog::error("Failed to warp {} to {}: {}", GetName(), filePath.string(), CPLGetLastErrorMsg());
+            }
+            else
+            {
+                GDALClose(dataset);
+            }
+            GDALWarpAppOptionsFree(options);
         }
         GDALClose(vrt);
         VSIUnlink(vrtPath);
@@ -176,6 +188,7 @@ void Service::Download(ServiceSampleType types, const glm::dvec2& minLatLong, co
         std::filesystem::path lowResolutionFilePath = std::format("{}_{}.tif", lowResolutionBasePath, int(type));
         if (!std::filesystem::exists(lowResolutionFilePath))
         {
+            Timer downsampleTimer(std::format("{} {} downsample", GetName(), ServiceSampleTypeToString(type)));
             const std::string bandString = std::format("{}", GetBand(type));
             const std::string algorithmString = ServiceSampleTypeToPixelType(type) == ServicePixelType::U32 ? "mode" : "average";
             const char* args[] =
@@ -203,77 +216,89 @@ void Service::Download(ServiceSampleType types, const glm::dvec2& minLatLong, co
             spdlog::error("Failed to open {}: {}", lowResolutionFilePath.string(), CPLGetLastErrorMsg());
             continue;
         }
-        Derive(type, lowResolution, lowResolutionBasePath);
+        {
+            Timer deriveTimer(std::format("{} {} derive", ServiceSampleTypeToString(type), GetName()));
+            Derive(type, lowResolution, lowResolutionBasePath);
+        }
         Raster raster;
-        raster.Width = GDALGetRasterXSize(lowResolution);
-        raster.Height = GDALGetRasterYSize(lowResolution);
-        if (GDALGetGeoTransform(lowResolution, raster.GeoTransform) != CE_None ||
-            GDALInvGeoTransform(raster.GeoTransform, raster.InverseGeoTransform) == FALSE)
         {
-            spdlog::error("Failed to get GeoTransform or InvGeoTransform for {}", lowResolutionFilePath.string());
+            Timer rasterTimer(std::format("{} {} raster", ServiceSampleTypeToString(type), GetName()));
+            raster.Width = GDALGetRasterXSize(lowResolution);
+            raster.Height = GDALGetRasterYSize(lowResolution);
+            if (GDALGetGeoTransform(lowResolution, raster.GeoTransform) != CE_None ||
+                GDALInvGeoTransform(raster.GeoTransform, raster.InverseGeoTransform) == FALSE)
+            {
+                spdlog::error("Failed to get GeoTransform or InvGeoTransform for {}", lowResolutionFilePath.string());
+                GDALClose(lowResolution);
+                continue;
+            }
+            raster.Wkt = GDALGetProjectionRef(lowResolution);
+            raster.Pixels.resize(size_t(raster.Width) * size_t(raster.Height));
+            CPLErr status = GDALRasterIO(
+                GDALGetRasterBand(lowResolution, 1), GF_Read,
+                0, 0, raster.Width, raster.Height,
+                raster.Pixels.data(), raster.Width, raster.Height,
+                ServiceSampleTypeToPixelType(type) == ServicePixelType::U32 ? GDT_UInt32 : GDT_Float32, 0, 0);
             GDALClose(lowResolution);
-            continue;
+            if (status != CE_None)
+            {
+                spdlog::error("Failed to read {}: {}", lowResolutionFilePath.string(), CPLGetLastErrorMsg());
+                continue;
+            }
         }
-        raster.Wkt = GDALGetProjectionRef(lowResolution);
-        raster.Pixels.resize(size_t(raster.Width) * size_t(raster.Height));
-        CPLErr status = GDALRasterIO(
-            GDALGetRasterBand(lowResolution, 1), GF_Read,
-            0, 0, raster.Width, raster.Height,
-            raster.Pixels.data(), raster.Width, raster.Height,
-            ServiceSampleTypeToPixelType(type) == ServicePixelType::U32 ? GDT_UInt32 : GDT_Float32, 0, 0);
-        GDALClose(lowResolution);
-        if (status != CE_None)
         {
-            spdlog::error("Failed to read {}: {}", lowResolutionFilePath.string(), CPLGetLastErrorMsg());
-            continue;
+            Timer postProcessTimer(std::format("{} {} post process", ServiceSampleTypeToString(type), GetName()));
+            PostProcess(type, raster.Pixels);
         }
-        PostProcess(type, raster.Pixels);
         Rasters[type] = std::move(raster);
     }
     GDALClose(highResolution);
     ////////////////////////////////////////////////////////////////////////////
     // Create ImTextures for each band
-    for (auto& [type, raster] : Rasters)
     {
-        ImTextureData* texture = IM_NEW(ImTextureData)();
-        texture->Create(ImTextureFormat_RGBA32, raster.Width, raster.Height);
-        uint32_t* texels = reinterpret_cast<uint32_t*>(texture->GetPixels());
-        if (type == ServiceSampleType::FuelModel)
+        for (auto& [type, raster] : Rasters)
         {
-            SDL_assert(ServiceSampleTypeToPixelType(type) == ServicePixelType::U32);
-            for (size_t i = 0; i < raster.Pixels.size(); i++)
+            Timer textureTimer(std::format("{} {} texture", ServiceSampleTypeToString(type), GetName()));
+            ImTextureData* texture = IM_NEW(ImTextureData)();
+            texture->Create(ImTextureFormat_RGBA32, raster.Width, raster.Height);
+            uint32_t* texels = reinterpret_cast<uint32_t*>(texture->GetPixels());
+            if (type == ServiceSampleType::FuelModel)
             {
-                texels[i] = FireFuelModelTypeGetColor(FireFuelModelType(raster.Pixels[i].U32));
-            }
-        }
-        else
-        {
-            SDL_assert(ServiceSampleTypeToPixelType(type) == ServicePixelType::F32);
-            static constexpr float kNoData = -9999.0f;
-            float minValue = std::numeric_limits<float>::max();
-            float maxValue = std::numeric_limits<float>::lowest();
-            for (const ServicePixel& pixel : raster.Pixels)
-            {
-                if (pixel.F32 == kNoData)
+                SDL_assert(ServiceSampleTypeToPixelType(type) == ServicePixelType::U32);
+                for (size_t i = 0; i < raster.Pixels.size(); i++)
                 {
-                    continue;
+                    texels[i] = FireFuelModelTypeGetColor(FireFuelModelType(raster.Pixels[i].U32));
                 }
-                minValue = std::min(minValue, pixel.F32);
-                maxValue = std::max(maxValue, pixel.F32);
             }
-            const float range = maxValue - minValue;
-            for (size_t i = 0; i < raster.Pixels.size(); i++)
+            else
             {
-                uint8_t gray = 0;
-                if (raster.Pixels[i].F32 != kNoData && range > 0.0f)
+                SDL_assert(ServiceSampleTypeToPixelType(type) == ServicePixelType::F32);
+                static constexpr float kNoData = -9999.0f;
+                float minValue = std::numeric_limits<float>::max();
+                float maxValue = std::numeric_limits<float>::lowest();
+                for (const ServicePixel& pixel : raster.Pixels)
                 {
-                    gray = (raster.Pixels[i].F32 - minValue) / range * 255.0f;
+                    if (pixel.F32 == kNoData)
+                    {
+                        continue;
+                    }
+                    minValue = std::min(minValue, pixel.F32);
+                    maxValue = std::max(maxValue, pixel.F32);
                 }
-                texels[i] = IM_COL32(gray, gray, gray, 255);
+                const float range = maxValue - minValue;
+                for (size_t i = 0; i < raster.Pixels.size(); i++)
+                {
+                    uint8_t gray = 0;
+                    if (raster.Pixels[i].F32 != kNoData && range > 0.0f)
+                    {
+                        gray = (raster.Pixels[i].F32 - minValue) / range * 255.0f;
+                    }
+                    texels[i] = IM_COL32(gray, gray, gray, 255);
+                }
             }
+            ImGui::RegisterUserTexture(texture);
+            raster.Texture = texture->GetTexRef();
         }
-        ImGui::RegisterUserTexture(texture);
-        raster.Texture = texture->GetTexRef();
     }
 }
 

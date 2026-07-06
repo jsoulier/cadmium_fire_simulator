@@ -16,8 +16,8 @@ enum class FireSimulatorCoordinatorType
 
 static constexpr const char* kFireSimulatorCoordinatorTypeStrings[] =
 {
-    "Brute Force",
     "Event Driven",
+    "Brute Force",
 };
 
 NLOHMANN_JSON_SERIALIZE_ENUM(FireSimulatorCoordinatorType, {
