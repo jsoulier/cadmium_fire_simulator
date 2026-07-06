@@ -14,10 +14,12 @@ ImageViewer::ImageViewer()
     , Selected{0, 0}
     , Zoom{1.0f}
     , Pan{0.0f, 0.0f}
+    , Time{0.0f}
+    , Overlay{0}
 {
 }
 
-void ImageViewer::Draw(ServiceManager& serviceManager, std::optional<FireResults>& results)
+void ImageViewer::Draw(ServiceManager& serviceManager, std::optional<FireResults>& results, std::optional<FireResults>& reference)
 {
     static constexpr int kMaxSampleTypes = SDL_arraysize(kServiceSampleTypeStrings);
     int typeIndex = ServiceSampleTypeToIndex(Type);
@@ -27,12 +29,21 @@ void ImageViewer::Draw(ServiceManager& serviceManager, std::optional<FireResults
         Zoom = 1.0f;
         Pan = ImVec2(0.0f, 0.0f);
     }
+    ImGui::RadioButton("Simulation", &Overlay, 0);
+    ImGui::SameLine();
+    ImGui::RadioButton("Reference", &Overlay, 1);
+    std::optional<FireResults>& active = Overlay == 0 ? results : reference;
+    if (active)
+    {
+        ImGui::SliderFloat("Time", &Time, 0.0f, active->GetMaxTime());
+        active->Update(Time);
+    }
     ServiceSampleType type = Type;
     std::unique_ptr<Service>& service = serviceManager.GetService(type);
     ImTextureRef overlay;
-    if (results && results->GetTexture() && results->GetTexture()->GetTexID() != ImTextureID_Invalid)
+    if (active && active->GetTexture() && active->GetTexture()->GetTexID() != ImTextureID_Invalid)
     {
-        overlay = results->GetTexture()->GetTexRef();
+        overlay = active->GetTexture()->GetTexRef();
     }
     ImTextureRef texture = service->GetTextureRef(type);
     glm::ivec2 size = service->GetSize(type);

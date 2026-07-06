@@ -26,6 +26,11 @@ Date::Date(const std::string& text)
     stream >> std::chrono::parse("%F", Days);
 }
 
+Date::Date(const std::tm& tm)
+    : Date{tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday}
+{
+}
+
 Date Date::operator+(int days) const
 {
     return Date(Days + std::chrono::days(days));
@@ -44,4 +49,14 @@ double Date::ToEpoch(int hm) const
 std::string Date::ToString() const
 {
     return std::format("{:%Y-%m-%d}", Days);
+}
+
+std::tm Date::ToTm() const
+{
+    std::chrono::year_month_day ymd{Days};
+    std::tm tm{};
+    tm.tm_year = int(ymd.year()) - 1900;
+    tm.tm_mon = unsigned(ymd.month()) - 1;
+    tm.tm_mday = unsigned(ymd.day());
+    return tm;
 }

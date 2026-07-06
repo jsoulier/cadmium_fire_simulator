@@ -26,8 +26,9 @@ static Worker worker;
 static ServiceManager serviceManager;
 static ImageViewer imageViewer;
 static std::optional<FireResults> results;
+static std::optional<FireResults> reference;
 static Future<FireResults> pendingResults;
-static float resultsTime;
+static Future<FireResults> pendingReference;
 
 static bool Init()
 {
@@ -66,8 +67,10 @@ static void Tick()
     if (pendingResults.IsReady())
     {
         results = pendingResults.Get();
-        resultsTime = results->GetMaxTime();
-        results->Update(resultsTime);
+    }
+    if (pendingReference.IsReady())
+    {
+        reference = pendingReference.Get();
     }
     ImGui_ImplSDLRenderer3_NewFrame();
     ImGui_ImplSDL3_NewFrame();
@@ -91,16 +94,16 @@ static void Tick()
             };
             pendingResults = serviceManager.Simulate(worker, params);
         }
+        if (ImGui::Button("Fetch"))
+        {
+            pendingReference = serviceManager.Fetch(worker);
+        }
         ImGui::EndDisabled();
     }
     ImGui::End();
     if (ImGui::Begin("Image"))
     {
-        if (results && ImGui::SliderFloat("Time", &resultsTime, 0.0f, results->GetMaxTime()))
-        {
-            results->Update(resultsTime);
-        }
-        imageViewer.Draw(serviceManager, results);
+        imageViewer.Draw(serviceManager, results, reference);
     }
     ImGui::End();
     if (ImGui::Begin("Console"))

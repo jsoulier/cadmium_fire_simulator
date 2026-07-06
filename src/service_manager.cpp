@@ -2,10 +2,12 @@
 #include <geo_names_imgui.hpp>
 #include <glm/glm.hpp>
 #include <imgui.h>
+#include <ImGuiDatePicker.hpp>
 
 #include <filesystem>
 #include <memory>
 
+#include "date.hpp"
 #include "service_manager.hpp"
 
 static const std::filesystem::path kBasePath = SDL_GetBasePath();
@@ -39,11 +41,20 @@ ServiceManager::ServiceManager()
     ServiceIndices[ServiceSampleType::Elevation] = 2;
     ServiceIndices[ServiceSampleType::Slope] = 2;
     ServiceIndices[ServiceSampleType::Aspect] = 2;
+    References.emplace_back(ReferenceCreateFIRMS());
+    References.emplace_back(ReferenceCreateEONET());
+    StartDate = Date(2021, 7, 13).ToTm();
+    EndDate = Date(2021, 7, 23).ToTm();
 }
 
 std::unique_ptr<Service>& ServiceManager::GetService(ServiceSampleType type)
 {
     return Services[ServiceIndices.at(type)];
+}
+
+std::unique_ptr<Reference>& ServiceManager::GetReference()
+{
+    return References[ReferenceIndex];
 }
 
 void ServiceManager::RenderImGui()
@@ -61,6 +72,19 @@ void ServiceManager::RenderImGui()
     ImGui::InputDouble("Max Latitude", &MaxLatLong.x);
     ImGui::InputDouble("Max Longitude", &MaxLatLong.y);
     ImGui::InputDouble("Resolution (Degrees)", &Resolution);
+    if (ImGui::BeginCombo("Reference", References[ReferenceIndex]->GetDisplayName()))
+    {
+        for (int i = 0; i < References.size(); i++)
+        {
+            if (ImGui::Selectable(References[i]->GetDisplayName(), ReferenceIndex == i))
+            {
+                ReferenceIndex = i;
+            }
+        }
+        ImGui::EndCombo();
+    }
+    ImGui::DatePicker("Start Date", StartDate);
+    ImGui::DatePicker("End Date", EndDate);
     for (auto& [type, index] : ServiceIndices)
     {
         if (ImGui::BeginCombo(ServiceSampleTypeToString(type), Services[index]->GetDisplayName()))
@@ -168,4 +192,9 @@ Future<FireResults> ServiceManager::Simulate(Worker& worker, FireSimulatorParams
         results.Load(params.OutPath, {params.Width, params.Height});
         return results;
     });
+}
+
+Future<FireResults> ServiceManager::Fetch(Worker& worker)
+{
+    return GetReference()->Fetch(worker, MinLatLong, MaxLatLong, Resolution, Date(StartDate), Date(EndDate));
 }

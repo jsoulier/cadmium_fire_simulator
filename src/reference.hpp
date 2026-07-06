@@ -41,3 +41,4 @@ protected:
 };
 
 std::unique_ptr<Reference> ReferenceCreateFIRMS();
+std::unique_ptr<Reference> ReferenceCreateEONET();
