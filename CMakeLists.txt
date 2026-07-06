@@ -38,6 +38,13 @@ add_executable(fire_simulator
     src/service.cpp
     src/service_custom.cpp
     src/service_esa_worldcover.cpp
+    src/service_landfire.cpp
+    src/service_landfire_aspect.cpp
+    src/service_landfire_canopy_cover.cpp
+    src/service_landfire_canopy_height.cpp
+    src/service_landfire_elevation.cpp
+    src/service_landfire_fuel_model.cpp
+    src/service_landfire_slope.cpp
     src/service_manager.cpp
     src/service_nrcan.cpp
     src/service_open_topography.cpp
