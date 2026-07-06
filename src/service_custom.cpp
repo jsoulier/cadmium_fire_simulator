@@ -13,14 +13,20 @@ class ServiceCustom : public Service
 public:
     ServiceCustom()
     {
-        for (int i = 0; i < 32; i++)
-        {
-            const ServiceSampleType type = ServiceSampleType(1 << i);
-            if ((ServiceSampleType::All & type) != ServiceSampleType{})
-            {
-                Values[type] = ServicePixel{};
-            }
-        }
+        Values[ServiceSampleType::FuelModel].U32 = kFireFuelModelGR2;
+        Values[ServiceSampleType::Elevation].F32 = 0.0f;
+        Values[ServiceSampleType::Slope].F32 = 0.0f;
+        Values[ServiceSampleType::Aspect].F32 = 0.0f;
+        Values[ServiceSampleType::CanopyCover].F32 = 0.0f;
+        Values[ServiceSampleType::CanopyHeight].F32 = 0.0f;
+        Values[ServiceSampleType::CrownRatio].F32 = 0.5f;
+        Values[ServiceSampleType::WindSpeed].F32 = 5.0f;
+        Values[ServiceSampleType::WindDirection].F32 = 0.0f;
+        Values[ServiceSampleType::MoistureOneHour].F32 = 8.0f;
+        Values[ServiceSampleType::MoistureTenHour].F32 = 9.0f;
+        Values[ServiceSampleType::MoistureHundredHour].F32 = 10.0f;
+        Values[ServiceSampleType::MoistureLiveHerbaceous].F32 = 60.0f;
+        Values[ServiceSampleType::MoistureLiveWoody].F32 = 90.0f;
     }
 
     const char* GetName() const override

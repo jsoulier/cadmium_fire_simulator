@@ -5,15 +5,15 @@
 #include <glm/gtx/hash.hpp>
 #include <imgui.h>
 
-#include <memory>
-
+#include "fire_results.hpp"
 #include "service.hpp"
+#include "service_manager.hpp"
 
 class ImageViewer
 {
 public:
     ImageViewer();
-    void Draw(std::unique_ptr<Service>& service, ServiceSampleType type, ImTextureRef overlay);
+    void Draw(ServiceManager& serviceManager, std::optional<FireResults>& results);
     ankerl::unordered_dense::set<glm::ivec2> GetSelected() const;
 
 private:

@@ -1,5 +1,2 @@
-usability:
-- serialize state using json macros
-- load results crashes if you don't download beforehand
-- better defaults on custom
-- show used memory
+[ ] nlohmann json macros to serialize params and services
+[ ] stochastic simulation model

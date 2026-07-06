@@ -1,3 +1,4 @@
+#include <SDL3/SDL.h>
 #include <glm/glm.hpp>
 #include <imgui.h>
 
@@ -16,8 +17,23 @@ ImageViewer::ImageViewer()
 {
 }
 
-void ImageViewer::Draw(std::unique_ptr<Service>& service, ServiceSampleType type, ImTextureRef overlay)
+void ImageViewer::Draw(ServiceManager& serviceManager, std::optional<FireResults>& results)
 {
+    static constexpr int kMaxSampleTypes = SDL_arraysize(kServiceSampleTypeStrings);
+    int typeIndex = ServiceSampleTypeToIndex(Type);
+    if (ImGui::Combo("Image Type", &typeIndex, kServiceSampleTypeStrings, kMaxSampleTypes))
+    {
+        Type = ServiceSampleTypeFromIndex(typeIndex);
+        Zoom = 1.0f;
+        Pan = ImVec2(0.0f, 0.0f);
+    }
+    ServiceSampleType type = Type;
+    std::unique_ptr<Service>& service = serviceManager.GetService(type);
+    ImTextureRef overlay;
+    if (results && results->GetTexture() && results->GetTexture()->GetTexID() != ImTextureID_Invalid)
+    {
+        overlay = results->GetTexture()->GetTexRef();
+    }
     ImTextureRef texture = service->GetTextureRef(type);
     glm::ivec2 size = service->GetSize(type);
     if (texture.GetTexID() == ImTextureID_Invalid || size.x <= 0 || size.y <= 0)
@@ -26,9 +42,8 @@ void ImageViewer::Draw(std::unique_ptr<Service>& service, ServiceSampleType type
     }
     float width = size.x;
     float height = size.y;
-    if (type != Type || size != Size)
+    if (size != Size)
     {
-        Type = type;
         Size = size;
         Zoom = 1.0f;
         Pan = ImVec2(0.0f, 0.0f);
