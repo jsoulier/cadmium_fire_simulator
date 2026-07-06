@@ -15,7 +15,7 @@ Timer::Timer(std::string label)
 
 Timer::~Timer()
 {
-    const Uint64 stop = SDL_GetTicksNS();
-    const double milliseconds = (stop - Start) / 1.0e6;
+    Uint64 stop = SDL_GetTicksNS();
+    double milliseconds = (stop - Start) / 1.0e6;
     spdlog::info("{} stopped at {:.3f} ms (took {:.3f} ms)", Label, stop / 1.0e6, milliseconds);
 }

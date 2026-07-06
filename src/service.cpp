@@ -60,8 +60,6 @@ void Service::Download(ServiceSampleType types, const glm::dvec2& minLatLong, co
     GDALAllRegister();
     const char* projPath[] = { SDL_GetBasePath(), nullptr };
     OSRSetPROJSearchPaths(projPath);
-    CPLSetConfigOption("GDAL_INGESTED_BYTES_AT_OPEN", "1000000");
-    CPLSetConfigOption("GDAL_HTTP_MULTIRANGE", "SERIAL");
     ////////////////////////////////////////////////////////////////////////////
     // Download and cache the GeoTIFF. Use a VRT to assemble multiple tiles and clip them to the desired region
     std::filesystem::path basePath = SDL_GetBasePath();
@@ -73,7 +71,7 @@ void Service::Download(ServiceSampleType types, const glm::dvec2& minLatLong, co
         maxLatLong.y);
     if (!std::filesystem::exists(filePath))
     {
-        TimerBlock(std::format("{} download source", GetName()));
+        TimerBlock(std::format("{} vrt", GetName()));
         std::vector<std::string> sources = GetSourceURLs(minLatLong, maxLatLong);
         if (sources.empty())
         {
@@ -118,7 +116,7 @@ void Service::Download(ServiceSampleType types, const glm::dvec2& minLatLong, co
         const std::string north = std::format("{}", maxLatLong.x);
         if (isWgs84)
         {
-            TimerBlock(std::format("{} source clip", GetName()));
+            TimerBlock(std::format("{} clip", GetName()));
             const char* args[] =
             {
                 "-projwin", west.c_str(), north.c_str(), east.c_str(), south.c_str(),
@@ -139,7 +137,7 @@ void Service::Download(ServiceSampleType types, const glm::dvec2& minLatLong, co
         }
         else
         {
-            TimerBlock(std::format("{} source clip and reproject", GetName()));
+            TimerBlock(std::format("{} clip and reproject", GetName()));
             const char* args[] =
             {
                 "-t_srs", "EPSG:4326",

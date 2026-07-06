@@ -7,7 +7,7 @@
 #include "service.hpp"
 
 static constexpr const char* kSource =
-    "/vsicurl/https://cwfis.cfs.nrcan.gc.ca/downloads/fuels/current/"
+    "/vsicurl_streaming/https://cwfis.cfs.nrcan.gc.ca/downloads/fuels/current/"
     "FBP_fueltypes_Canada_100m_EPSG3978_20240527.tif";
 
 class ServiceNRCan : public Service
