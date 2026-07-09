@@ -9,7 +9,6 @@
     {
       "name": "common",
       "hidden": true,
-      "binaryDir": "${sourceDir}/build",
       "cacheVariables": {
         "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/lib/vcpkg/scripts/buildsystems/vcpkg.cmake"
       }
@@ -17,12 +16,23 @@
     {
       "name": "msvc",
       "inherits": "common",
-      "generator": "Ninja Multi-Config"
+      "generator": "Ninja Multi-Config",
+      "binaryDir": "${sourceDir}/build/msvc"
     },
     {
-      "name": "clang",
+      "name": "clang-debug",
       "inherits": "common",
       "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build/clang-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "clang-release",
+      "inherits": "common",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build/clang-release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }
@@ -30,12 +40,22 @@
   ],
   "buildPresets": [
     {
-      "name": "msvc",
-      "configurePreset": "msvc"
+      "name": "msvc-debug",
+      "configurePreset": "msvc",
+      "configuration": "Debug"
     },
     {
-      "name": "clang",
-      "configurePreset": "clang"
+      "name": "msvc-release",
+      "configurePreset": "msvc",
+      "configuration": "Release"
+    },
+    {
+      "name": "clang-debug",
+      "configurePreset": "clang-debug"
+    },
+    {
+      "name": "clang-release",
+      "configurePreset": "clang-release"
     }
   ]
 }

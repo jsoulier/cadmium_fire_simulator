@@ -16,6 +16,8 @@ High performance Rothermel fire simulator using Cadmium and GDAL
 - [NRCan](https://cwfis.cfs.nrcan.gc.ca) (fuel model)
 - [ESA WorldCover](https://esa-worldcover.org) (fuel model)
 - [OpenTopography](https://opentopography.org) (elevation, slope, aspect)
+- [FIRMS](https://firms.modaps.eosdis.nasa.gov) (reference)
+- [EONET](https://eonet.gsfc.nasa.gov) (reference)
 
 ### Building
 
@@ -25,8 +27,8 @@ High performance Rothermel fire simulator using Cadmium and GDAL
 git clone https://github.com/jsoulier/fire_simulator --recurse-submodules
 cd fire_simulator
 cmake --preset msvc
-cmake --build --preset msvc --config Release
-cd build/bin
+cmake --build --preset msvc-release
+cd build/msvc/bin
 ./fire_simulator.exe
 ```
 
@@ -35,8 +37,8 @@ cd build/bin
 ```bash
 git clone https://github.com/jsoulier/fire_simulator --recurse-submodules
 cd fire_simulator
-cmake --preset clang -DCMAKE_BUILD_TYPE=Release
-cmake --build --preset clang
-cd build/bin
+cmake --preset clang-release
+cmake --build --preset clang-release
+cd build/clang-release/bin
 ./fire_simulator
 ```

@@ -5,7 +5,7 @@
             "name": "win32",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build/bin/fire_simulator.exe",
+            "program": "${workspaceFolder}/build/msvc/bin/fire_simulator.exe",
             "cwd": "${workspaceFolder}",
             "preLaunchTask": "CMake: build",
         },
