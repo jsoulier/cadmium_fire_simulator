@@ -5,7 +5,6 @@
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_sdlrenderer3.h>
-// #include <mimalloc-new-delete.h>
 #include <spdlog/spdlog.h>
 
 #include <memory>

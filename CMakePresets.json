@@ -17,12 +17,15 @@
     {
       "name": "msvc",
       "inherits": "common",
-      "generator": "Ninja"
+      "generator": "Ninja Multi-Config"
     },
     {
       "name": "clang",
       "inherits": "common",
-      "generator": "Unix Makefiles"
+      "generator": "Unix Makefiles",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
     }
   ],
   "buildPresets": [

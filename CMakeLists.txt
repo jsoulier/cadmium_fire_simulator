@@ -27,6 +27,12 @@ add_subdirectory(lib/imgui)
 add_subdirectory(lib/spdlog)
 add_subdirectory(lib/tracy)
 
+set(MI_BUILD_OBJECT OFF)
+set(MI_BUILD_SHARED OFF)
+set(MI_BUILD_TESTS OFF)
+set(MI_OVERRIDE OFF)
+add_subdirectory(lib/mimalloc)
+
 add_executable(fire_simulator
     src/auth.cpp
     src/console.cpp
@@ -39,6 +45,7 @@ add_executable(fire_simulator
     src/http.cpp
     src/image_viewer.cpp
     src/main.cpp
+    src/mimalloc.cpp
     src/reference.cpp
     src/reference_database.cpp
     src/reference_eonet.cpp
@@ -68,14 +75,17 @@ target_link_libraries(fire_simulator PRIVATE
     geo_names
     glm::glm
     imgui
+    mimalloc-static
     spdlog::spdlog
 )
 target_compile_definitions(fire_simulator PRIVATE GLM_ENABLE_EXPERIMENTAL)
 set_target_properties(fire_simulator PROPERTIES CXX_STANDARD 23)
 
-# for some reason GDAL and dependencies aren't being placed next to the executable
-add_custom_command(TARGET fire_simulator POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        ${CMAKE_BINARY_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}/$<IF:$<CONFIG:Debug>,debug/bin,bin>
-        $<TARGET_FILE_DIR:fire_simulator>
-)
+# vcpkg debug binaries aren't copied automatically so a manual copy is required
+if(WIN32)
+    add_custom_command(TARGET fire_simulator POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            ${CMAKE_BINARY_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}/$<IF:$<CONFIG:Debug>,debug/bin,bin>
+            $<TARGET_FILE_DIR:fire_simulator>
+    )
+endif()
