@@ -4,6 +4,7 @@
 
 #include <filesystem>
 #include <memory>
+#include <utility>
 
 #include "service_manager.hpp"
 
@@ -12,9 +13,11 @@ static const std::filesystem::path kFireSimulatorPath = kBasePath / "fire_simula
 static constexpr double kMetresPerDegree = 111320.0;
 
 ServiceManager::ServiceManager()
-    : TileResolution{0.001f}
+    : ReferenceIndex{0}
+    , TileResolution{0.001f}
     , TimeResolution{1.0f}
 {
+    Simulator.SetCoordinatorType(FireSimulatorCoordinatorType::EventDriven);
     Services.emplace_back(ServiceCreateNRCan());
     Services.emplace_back(ServiceCreateESAWorldCover());
     Services.emplace_back(ServiceCreateOpenTopography());
@@ -119,17 +122,17 @@ void ServiceManager::Download(Worker& worker)
                 TileResolution,
                 TimeResolution,
                 Database.GetStartDate(),
-                Database.GetEndDate());
+                Database.GetEndDate(),
+                SDL_GetBasePath());
         });
     }
 }
 
-Future<FireResults> ServiceManager::Simulate(Worker& worker, FireSimulatorParams& params)
+Future<FireResults> ServiceManager::Simulate(Worker& worker, ankerl::unordered_dense::set<glm::ivec2> selected)
 {
-    return worker.Submit([this, inParams = params]()
+    return worker.Submit([this, selected = std::move(selected)]()
     {
         FireResults results;
-        FireSimulatorParams params = inParams;
         const auto getStaticPixel = [this](ServiceSampleType type) -> std::function<float(int, int)>
         {
             const Service* service = Services[ServiceIndices.at(type)].get();
@@ -151,40 +154,43 @@ Future<FireResults> ServiceManager::Simulate(Worker& worker, FireSimulatorParams
         glm::dvec2 min = Database.GetMinLatLong();
         glm::dvec2 max = Database.GetMaxLatLong();
         SDL_assert(size.x > 0 && size.y > 0);
-        params.Width = size.x;
-        params.Height = size.y;
-        params.Resolution = TileResolution * kMetresPerDegree;
-        params.FuelModel = [fuelService](int x, int y)
+        Simulator.SetSize(size.x, size.y);
+        Simulator.SetResolution(TileResolution * kMetresPerDegree);
+        Simulator.SetIgniting([selected = std::move(selected)](int x, int y)
+        {
+            return selected.contains(glm::ivec2{x, y});
+        });
+        Simulator.SetFuelModel([fuelService](int x, int y)
         {
             return FireFuelModelType(fuelService->GetValue(ServiceSampleType::FuelModel, x, y, 0.0f).U32);
-        };
-        params.Longitude = [min, max, size](int x, int)
+        });
+        Simulator.SetLongitude([min, max, size](int x, int)
         {
             return min.y + (x + 0.5) / size.x * (max.y - min.y);
-        };
-        params.Latitude = [min, max, size](int, int y)
+        });
+        Simulator.SetLatitude([min, max, size](int, int y)
         {
             return max.x - (y + 0.5) / size.y * (max.x - min.x);
-        };
-        params.Elevation = getStaticPixel(ServiceSampleType::Elevation);
-        params.Slope = getStaticPixel(ServiceSampleType::Slope);
-        params.Aspect = getStaticPixel(ServiceSampleType::Aspect);
-        params.CanopyCover = getStaticPixel(ServiceSampleType::CanopyCover);
-        params.CanopyHeight = getStaticPixel(ServiceSampleType::CanopyHeight);
-        params.CrownRatio = getStaticPixel(ServiceSampleType::CrownRatio);
-        params.WindSpeed = getDynamicPixel(ServiceSampleType::WindSpeed);
-        params.WindDirection = getDynamicPixel(ServiceSampleType::WindDirection);
-        params.MoistureOneHour = getDynamicPixel(ServiceSampleType::MoistureOneHour);
-        params.MoistureTenHour = getDynamicPixel(ServiceSampleType::MoistureTenHour);
-        params.MoistureHundredHour = getDynamicPixel(ServiceSampleType::MoistureHundredHour);
-        params.MoistureLiveHerbaceous = getDynamicPixel(ServiceSampleType::MoistureLiveHerbaceous);
-        params.MoistureLiveWoody = getDynamicPixel(ServiceSampleType::MoistureLiveWoody);
-        params.OutPath = kFireSimulatorPath.string();
-        if (!FireSimulatorRun(params))
+        });
+        Simulator.SetElevation(getStaticPixel(ServiceSampleType::Elevation));
+        Simulator.SetSlope(getStaticPixel(ServiceSampleType::Slope));
+        Simulator.SetAspect(getStaticPixel(ServiceSampleType::Aspect));
+        Simulator.SetCanopyCover(getStaticPixel(ServiceSampleType::CanopyCover));
+        Simulator.SetCanopyHeight(getStaticPixel(ServiceSampleType::CanopyHeight));
+        Simulator.SetCrownRatio(getStaticPixel(ServiceSampleType::CrownRatio));
+        Simulator.SetWindSpeed(getDynamicPixel(ServiceSampleType::WindSpeed));
+        Simulator.SetWindDirection(getDynamicPixel(ServiceSampleType::WindDirection));
+        Simulator.SetMoistureOneHour(getDynamicPixel(ServiceSampleType::MoistureOneHour));
+        Simulator.SetMoistureTenHour(getDynamicPixel(ServiceSampleType::MoistureTenHour));
+        Simulator.SetMoistureHundredHour(getDynamicPixel(ServiceSampleType::MoistureHundredHour));
+        Simulator.SetMoistureLiveHerbaceous(getDynamicPixel(ServiceSampleType::MoistureLiveHerbaceous));
+        Simulator.SetMoistureLiveWoody(getDynamicPixel(ServiceSampleType::MoistureLiveWoody));
+        Simulator.SetOutPath(kFireSimulatorPath.string());
+        if (!Simulator.Simulate())
         {
             return results;
         }
-        results.Load(params.OutPath, {params.Width, params.Height});
+        results.Load(kFireSimulatorPath.string(), size);
         return results;
     });
 }

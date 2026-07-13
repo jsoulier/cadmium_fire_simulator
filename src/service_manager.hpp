@@ -2,6 +2,7 @@
 
 #include <ankerl/unordered_dense.h>
 #include <glm/glm.hpp>
+#include <glm/gtx/hash.hpp>
 
 #include <vector>
 #include <memory>
@@ -22,15 +23,16 @@ public:
     std::unique_ptr<Reference>& GetReference();
     void RenderImGui(Worker& worker);
     void Download(Worker& worker);
-    Future<FireResults> Simulate(Worker& worker, FireSimulatorParams& params);
+    Future<FireResults> Simulate(Worker& worker, ankerl::unordered_dense::set<glm::ivec2> selected);
     Future<FireResults> Fetch(Worker& worker);
 
 private:
+    FireSimulator Simulator;
     std::vector<std::unique_ptr<Service>> Services;
     ankerl::unordered_dense::map<ServiceSampleType, int> ServiceIndices;
     ankerl::unordered_dense::map<int, ServiceSampleType> ServiceIndicesToTypes;
     std::vector<std::unique_ptr<Reference>> References;
-    int ReferenceIndex = 0;
+    int ReferenceIndex;
     ReferenceDatabase Database;
     float TileResolution;
     float TimeResolution;

@@ -17,6 +17,8 @@
 
 #include "fire_fuel_model.hpp"
 
+class FireSimulator;
+
 enum class FireCellStatus
 {
     Unburnt = 0,
@@ -49,16 +51,10 @@ class FireModel : public cadmium::celldevs::GridCell<FireState, double>
 {
 public:
     FireModel(
+        const FireSimulator& simulator,
         const cadmium::celldevs::coordinates& id,
         const std::shared_ptr<const cadmium::celldevs::GridCellConfig<FireState, double>>& config,
-        float resolution,
-        std::function<float(int, int, float)> windSpeed,
-        std::function<float(int, int, float)> windDirection,
-        std::function<float(int, int, float)> moistureOneHour,
-        std::function<float(int, int, float)> moistureTenHour,
-        std::function<float(int, int, float)> moistureHundredHour,
-        std::function<float(int, int, float)> moistureLiveHerbaceous,
-        std::function<float(int, int, float)> moistureLiveWoody);
+        float resolution);
     [[nodiscard]] bool isComplete() const override;
     [[nodiscard]] FireState localComputation(FireState state, const cadmium::celldevs::Neighborhood<cadmium::celldevs::coordinates, FireState, double>& neighborhood) const override;
     [[nodiscard]] double outputDelay(const FireState& state) const override;
@@ -71,6 +67,7 @@ private:
     float GetDirectionalSpreadRate(float bearing) const;
     float GetMaxSpreadRate() const;
 
+    const FireSimulator& Simulator;
     float Resolution;
     FireFuelModelType FuelModel;
     float Slope;
@@ -78,14 +75,6 @@ private:
     double Longitude;
     double Latitude;
     float Height;
-    // TODO: create a FireSimulator class and store these functions on it. they're all duplicates
-    std::function<float(int, int, float)> WindSpeed;
-    std::function<float(int, int, float)> WindDirection;
-    std::function<float(int, int, float)> MoistureOneHour;
-    std::function<float(int, int, float)> MoistureTenHour;
-    std::function<float(int, int, float)> MoistureHundredHour;
-    std::function<float(int, int, float)> MoistureLiveHerbaceous;
-    std::function<float(int, int, float)> MoistureLiveWoody;
     float CanopyCover;
     float CanopyHeight;
     float CrownRatio;

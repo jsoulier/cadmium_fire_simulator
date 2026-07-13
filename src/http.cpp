@@ -1,4 +1,3 @@
-#include <SDL3/SDL.h>
 #include <cpl_http.h>
 #include <spdlog/spdlog.h>
 
@@ -28,7 +27,7 @@ std::optional<std::string> HttpGet(const std::string& url)
     }
 }
 
-std::optional<std::string> HttpGetAndCache(const std::string& url)
+std::optional<std::string> HttpGetAndCache(const std::string& url, const std::filesystem::path& directory)
 {
     static constexpr std::string_view kBadChars ="<>:\"/\\|?*";
     std::string name = url;
@@ -40,8 +39,7 @@ std::optional<std::string> HttpGetAndCache(const std::string& url)
             character = '_';
         }
     }
-    std::filesystem::path basePath = SDL_GetBasePath();
-    std::filesystem::path filePath = basePath / name;
+    std::filesystem::path filePath = directory / name;
     if (std::filesystem::exists(filePath))
     {
         std::ifstream file(filePath, std::ios::binary);

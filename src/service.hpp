@@ -164,17 +164,17 @@ public:
     virtual ServiceSampleType GetSupportedTypes() const = 0;
     virtual ServiceSampleType GetRequiredSampleTypes(ServiceSampleType types) const { return {}; }
     virtual void RenderImGui() {}
-    void Download(
+    virtual void Download(
         ServiceSampleType types,
         const glm::dvec2& minLatLong,
         const glm::dvec2& maxLatLong,
         float tileResolution,
         float timeResolution,
         const Date& startDate,
-        const Date& endDate);
-    // TODO: make non-virtual. make ServiceCustom populate Static/DynamicData instead
-    virtual ServiceSampleTypeValue GetValue(ServiceSampleType type, const glm::dvec2& latLong, float time) const;
-    virtual ServiceSampleTypeValue GetValue(ServiceSampleType type, int x, int y, float time) const;
+        const Date& endDate,
+        const std::filesystem::path& directory);
+    ServiceSampleTypeValue GetValue(ServiceSampleType type, const glm::dvec2& latLong, float time) const;
+    ServiceSampleTypeValue GetValue(ServiceSampleType type, int x, int y, float time) const;
     glm::ivec2 GetSize(ServiceSampleType type) const;
     ImTextureRef GetTextureRef(ServiceSampleType type);
 
@@ -182,10 +182,10 @@ protected:
     virtual std::vector<std::string> GetURLs(const glm::dvec2& minLatLong, const glm::dvec2& maxLatLong, const Date& startDate, const Date& endDate) const { return {}; }
     virtual std::vector<ServiceSampleTypeDynamicValue> GetDynamicValues(const std::string& response, ServiceSampleType type) const { return {}; }
     virtual int GetBand(ServiceSampleType type) const { return 0; }
-    virtual void Derive(ServiceSampleType type, GDALDatasetH lowResolution, const std::string& basePath) {}
+    virtual void Derive(ServiceSampleType type, GDALDatasetH lowResolution, const std::string& directory) {}
     virtual void PostProcess(ServiceSampleType type, std::vector<ServiceSampleTypeValue>& pixels) {}
     ServiceSampleTypeValue GetDynamicValue(ServiceSampleType type, float time) const;
-    void DEMProcessing(GDALDatasetH elevation, const std::string& basePath, ServiceSampleType type);
+    void DEMProcessing(GDALDatasetH elevation, const std::string& directory, ServiceSampleType type);
 
     struct StaticSampleData
     {

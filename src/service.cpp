@@ -70,13 +70,15 @@ void Service::Download(
     float tileResolution,
     float timeResolution,
     const Date& startDate,
-    const Date& endDate)
+    const Date& endDate,
+    const std::filesystem::path& directory)
 {
     SDL_assert(tileResolution > 0.0f);
     SDL_assert(timeResolution > 0.0f);
     TimerBlock(std::format("{} download", GetName()));
     types |= GetRequiredSampleTypes(types);
     SDL_assert((types & ~GetSupportedTypes()) == ServiceSampleType{});
+    std::filesystem::create_directories(directory);
     StaticData.clear();
     DynamicData.clear();
     ////////////////////////////////////////////////////////////////////////////
@@ -97,7 +99,7 @@ void Service::Download(
         const std::vector<std::string> urls = GetURLs(minLatLong, maxLatLong, startDate, endDate);
         for (const std::string& url : urls)
         {
-            const std::optional<std::string> response = HttpGetAndCache(url);
+            const std::optional<std::string> response = HttpGetAndCache(url, directory);
             if (!response)
             {
                 return;
@@ -166,8 +168,7 @@ void Service::Download(
     OSRSetPROJSearchPaths(projPath);
     ////////////////////////////////////////////////////////////////////////////
     // Download and cache the GeoTIFF. Use a VRT to assemble multiple tiles and clip them to the desired region
-    std::filesystem::path basePath = SDL_GetBasePath();
-    std::filesystem::path filePath = basePath / std::format("{}_{}.{}_{}.{}.tif",
+    std::filesystem::path filePath = directory / std::format("{}_{}.{}_{}.{}.tif",
         GetName(),
         minLatLong.x,
         minLatLong.y,
@@ -273,7 +274,7 @@ void Service::Download(
         return;
     }
     const std::string tileResolutionString = std::format("{}", tileResolution);
-    const std::string lowResolutionBasePath = (basePath / std::format("{}_{}.{}_{}.{}_{}",
+    const std::string lowResolutionDirectory = (directory / std::format("{}_{}.{}_{}.{}_{}",
         GetName(),
         minLatLong.x,
         minLatLong.y,
@@ -287,7 +288,7 @@ void Service::Download(
         {
             continue;
         }
-        std::filesystem::path lowResolutionFilePath = std::format("{}_{}.tif", lowResolutionBasePath, int(type));
+        std::filesystem::path lowResolutionFilePath = std::format("{}_{}.tif", lowResolutionDirectory, int(type));
         if (!std::filesystem::exists(lowResolutionFilePath))
         {
             TimerBlock(std::format("{} {} downsample", GetName(), ServiceSampleTypeToString(type)));
@@ -320,7 +321,7 @@ void Service::Download(
         }
         {
             TimerBlock(std::format("{} {} derive", GetName(), ServiceSampleTypeToString(type)));
-            Derive(type, lowResolution, lowResolutionBasePath);
+            Derive(type, lowResolution, lowResolutionDirectory);
         }
         StaticSampleData staticData;
         {
@@ -414,7 +415,13 @@ ServiceSampleTypeValue Service::GetValue(ServiceSampleType type, const glm::dvec
     {
         const auto it = StaticData.find(type);
         SDL_assert(it != StaticData.end());
-        const double* transform = it->second.InverseGeoTransform;
+        const StaticSampleData& staticData = it->second;
+        // TODO: ugly hack for ServiceCustom
+        if (staticData.Pixels.size() == 1)
+        {
+            return staticData.Pixels.front();
+        }
+        const double* transform = staticData.InverseGeoTransform;
         int x = int(transform[0] + latLong.y * transform[1] + latLong.x * transform[2]);
         int y = int(transform[3] + latLong.y * transform[4] + latLong.x * transform[5]);
         return GetValue(type, x, y, time);
@@ -432,6 +439,11 @@ ServiceSampleTypeValue Service::GetValue(ServiceSampleType type, int x, int y, f
         const auto it = StaticData.find(type);
         SDL_assert(it != StaticData.end());
         const StaticSampleData& staticData = it->second;
+        // TODO: ugly hack for ServiceCustom
+        if (staticData.Pixels.size() == 1)
+        {
+            return staticData.Pixels.front();
+        }
         // TODO: should assert?
         if (x < 0 || y < 0 || x >= staticData.Width || y >= staticData.Height)
         {
@@ -484,9 +496,9 @@ ImTextureRef Service::GetTextureRef(ServiceSampleType type)
     }
 }
 
-void Service::DEMProcessing(GDALDatasetH elevation, const std::string& basePath, ServiceSampleType type)
+void Service::DEMProcessing(GDALDatasetH elevation, const std::string& directory, ServiceSampleType type)
 {
-    std::string path = std::format("{}_{}.tif", basePath, int(type));
+    std::string path = std::format("{}_{}.tif", directory, int(type));
     if (std::filesystem::exists(path))
     {
         return;

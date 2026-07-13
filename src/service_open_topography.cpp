@@ -60,12 +60,12 @@ public:
         return 1;
     }
 
-    void Derive(ServiceSampleType type, GDALDatasetH lowResolution, const std::string& basePath) override
+    void Derive(ServiceSampleType type, GDALDatasetH lowResolution, const std::string& directory) override
     {
         if (type == ServiceSampleType::Elevation)
         {
-            DEMProcessing(lowResolution, basePath, ServiceSampleType::Slope);
-            DEMProcessing(lowResolution, basePath, ServiceSampleType::Aspect);
+            DEMProcessing(lowResolution, directory, ServiceSampleType::Slope);
+            DEMProcessing(lowResolution, directory, ServiceSampleType::Aspect);
         }
     }
 };

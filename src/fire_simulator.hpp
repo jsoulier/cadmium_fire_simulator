@@ -25,32 +25,61 @@ NLOHMANN_JSON_SERIALIZE_ENUM(FireSimulatorCoordinatorType, {
     {FireSimulatorCoordinatorType::BruteForce, "BruteForce"},
 })
 
-struct FireSimulatorParams
+class FireSimulator
 {
-    FireSimulatorParams();
+public:
+    FireSimulator();
+    void SetSize(int width, int height);
+    void SetResolution(float resolution);
+    void SetCoordinatorType(FireSimulatorCoordinatorType coordinatorType);
+    void SetIgniting(std::function<bool(int x, int y)> igniting);
+    void SetFuelModel(std::function<FireFuelModelType(int x, int y)> fuelModel);
+    void SetLongitude(std::function<double(int x, int y)> longitude);
+    void SetLatitude(std::function<double(int x, int y)> latitude);
+    void SetElevation(std::function<float(int x, int y)> elevation);
+    void SetSlope(std::function<float(int x, int y)> slope);
+    void SetAspect(std::function<float(int x, int y)> aspect);
+    void SetCanopyCover(std::function<float(int x, int y)> canopyCover);
+    void SetCanopyHeight(std::function<float(int x, int y)> canopyHeight);
+    void SetCrownRatio(std::function<float(int x, int y)> crownRatio);
+    void SetWindSpeed(std::function<float(int x, int y, float time)> windSpeed);
+    void SetWindDirection(std::function<float(int x, int y, float time)> windDirection);
+    void SetMoistureOneHour(std::function<float(int x, int y, float time)> moistureOneHour);
+    void SetMoistureTenHour(std::function<float(int x, int y, float time)> moistureTenHour);
+    void SetMoistureHundredHour(std::function<float(int x, int y, float time)> moistureHundredHour);
+    void SetMoistureLiveHerbaceous(std::function<float(int x, int y, float time)> moistureLiveHerbaceous);
+    void SetMoistureLiveWoody(std::function<float(int x, int y, float time)> moistureLiveWoody);
+    void SetOutPath(std::string outPath);
+    float GetWindSpeed(int x, int y, float time) const;
+    float GetWindDirection(int x, int y, float time) const;
+    float GetMoistureOneHour(int x, int y, float time) const;
+    float GetMoistureTenHour(int x, int y, float time) const;
+    float GetMoistureHundredHour(int x, int y, float time) const;
+    float GetMoistureLiveHerbaceous(int x, int y, float time) const;
+    float GetMoistureLiveWoody(int x, int y, float time) const;
+    bool Simulate();
 
-    int Width;                                                 // number of cells
-    int Height;                                                // number of cells
-    float Resolution;                                          // size of each cell
+private:
+    int Width;
+    int Height;
+    float Resolution;
     FireSimulatorCoordinatorType CoordinatorType;
     std::function<bool(int x, int y)> Igniting;
     std::function<FireFuelModelType(int x, int y)> FuelModel;
     std::function<double(int x, int y)> Longitude;
     std::function<double(int x, int y)> Latitude;
-    std::function<float(int x, int y)> Elevation;              // metres
-    std::function<float(int x, int y)> Slope;                  // degrees
-    std::function<float(int x, int y)> Aspect;                 // degrees
-    std::function<float(int x, int y)> CanopyCover;            // 0 to 1 fraction
-    std::function<float(int x, int y)> CanopyHeight;           // metres
-    std::function<float(int x, int y)> CrownRatio;             // 0 to 1 fraction
-    std::function<float(int x, int y, float time)> WindSpeed;  // mph; time is simulation hours
-    std::function<float(int x, int y, float time)> WindDirection; // relative to north degrees; time is simulation hours
-    std::function<float(int x, int y, float time)> MoistureOneHour;        // percent; time is simulation hours
-    std::function<float(int x, int y, float time)> MoistureTenHour;        // percent; time is simulation hours
-    std::function<float(int x, int y, float time)> MoistureHundredHour;    // percent; time is simulation hours
-    std::function<float(int x, int y, float time)> MoistureLiveHerbaceous; // percent; time is simulation hours
-    std::function<float(int x, int y, float time)> MoistureLiveWoody;      // percent; time is simulation hours
+    std::function<float(int x, int y)> Elevation;
+    std::function<float(int x, int y)> Slope;
+    std::function<float(int x, int y)> Aspect;
+    std::function<float(int x, int y)> CanopyCover;
+    std::function<float(int x, int y)> CanopyHeight;
+    std::function<float(int x, int y)> CrownRatio;
+    std::function<float(int x, int y, float time)> WindSpeed;
+    std::function<float(int x, int y, float time)> WindDirection;
+    std::function<float(int x, int y, float time)> MoistureOneHour;
+    std::function<float(int x, int y, float time)> MoistureTenHour;
+    std::function<float(int x, int y, float time)> MoistureHundredHour;
+    std::function<float(int x, int y, float time)> MoistureLiveHerbaceous;
+    std::function<float(int x, int y, float time)> MoistureLiveWoody;
     std::string OutPath;
 };
-
-bool FireSimulatorRun(const FireSimulatorParams& params);

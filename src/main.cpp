@@ -86,13 +86,7 @@ static void Tick()
         if (ImGui::Button("Simulate"))
         {
             serviceManager.Download(worker);
-            FireSimulatorParams params;
-            params.CoordinatorType = FireSimulatorCoordinatorType::EventDriven;
-            params.Igniting = [selected = imageViewer.GetSelected()](int x, int y)
-            {
-                return selected.contains(glm::ivec2{x, y});
-            };
-            pendingResults = serviceManager.Simulate(worker, params);
+            pendingResults = serviceManager.Simulate(worker, imageViewer.GetSelected());
         }
         if (ImGui::Button("Fetch"))
         {

@@ -1,2 +1,3 @@
 [ ] nlohmann json macros to serialize params and services
 [ ] stochastic simulation model
+[ ] clang-format

@@ -33,7 +33,7 @@ set(MI_BUILD_TESTS OFF)
 set(MI_OVERRIDE OFF)
 add_subdirectory(lib/mimalloc)
 
-add_executable(fire_simulator
+add_library(fire_simulator_core
     src/auth.cpp
     src/console.cpp
     src/date.cpp
@@ -44,7 +44,6 @@ add_executable(fire_simulator
     src/fire_simulator.cpp
     src/http.cpp
     src/image_viewer.cpp
-    src/main.cpp
     src/mimalloc.cpp
     src/reference.cpp
     src/reference_database.cpp
@@ -67,8 +66,8 @@ add_executable(fire_simulator
     src/timer.cpp
     src/worker.cpp
 )
-target_include_directories(fire_simulator PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(fire_simulator PRIVATE
+target_include_directories(fire_simulator_core PUBLIC src)
+target_link_libraries(fire_simulator_core PUBLIC
     GDAL::GDAL
     SDL3::SDL3
     behave
@@ -79,8 +78,21 @@ target_link_libraries(fire_simulator PRIVATE
     mimalloc-static
     spdlog::spdlog
 )
-target_compile_definitions(fire_simulator PRIVATE GLM_ENABLE_EXPERIMENTAL)
-set_target_properties(fire_simulator PROPERTIES CXX_STANDARD 23)
+target_compile_definitions(fire_simulator_core PUBLIC GLM_ENABLE_EXPERIMENTAL)
+set_target_properties(fire_simulator_core PROPERTIES CXX_STANDARD 23)
+
+include(CTest)
+function(add_fire_simulator_executable NAME PATH TEST)
+    add_executable(${NAME} ${PATH})
+    target_link_libraries(${NAME} PRIVATE fire_simulator_core)
+    set_target_properties(${NAME} PROPERTIES CXX_STANDARD 23)
+    if(test)
+        add_test(NAME ${NAME} COMMAND ${NAME})
+    endif()
+endfunction()
+add_fire_simulator_executable(fire_simulator src/main.cpp FALSE)
+add_fire_simulator_executable(fire_simulator_test_service tests/service.cpp TRUE)
+enable_testing()
 
 # vcpkg debug binaries aren't copied automatically so a manual copy is required
 if(WIN32)
