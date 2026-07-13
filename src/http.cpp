@@ -2,6 +2,8 @@
 #include <spdlog/spdlog.h>
 
 #include <filesystem>
+#include <format>
+#include <functional>
 #include <fstream>
 #include <iterator>
 #include <optional>
@@ -38,6 +40,12 @@ std::optional<std::string> HttpGetAndCache(const std::string& url, const std::fi
         {
             character = '_';
         }
+    }
+    // for handling Windows path limit
+    if (name.size() > 64)
+    {
+        name.resize(47);
+        name += std::format("_{:016x}", std::hash<std::string>{}(url));
     }
     std::filesystem::path filePath = directory / name;
     if (std::filesystem::exists(filePath))

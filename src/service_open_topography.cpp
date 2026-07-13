@@ -1,5 +1,7 @@
 // https://portal.opentopography.org/apidocs/#/Public/getGlobalDem
 
+#include <spdlog/spdlog.h>
+
 #include <filesystem>
 #include <format>
 #include <memory>
@@ -7,10 +9,12 @@
 #include <vector>
 
 #include "auth.hpp"
+#include "math.hpp"
 #include "service.hpp"
 
 static constexpr const char* kURL = "https://portal.opentopography.org/API/globaldem";
 static constexpr const char* kDEMType = "SRTMGL1";
+static constexpr double kMinimumSizeMeters = 250.0; // "Error: Each side of the bounding box must be greater than approximately 250 meters"
 
 class ServiceOpenTopography : public Service
 {
@@ -37,8 +41,14 @@ public:
 
     std::vector<std::string> GetURLs(const glm::dvec2& minLatLong, const glm::dvec2& maxLatLong, const Date& startDate, const Date& endDate) const override
     {
-        const std::string apiKey = AuthGetKey("open_topography.txt");
-        if (apiKey.empty())
+        const glm::dvec2 size = MathLatLongToMeters(minLatLong, maxLatLong);
+        if (size.x <= kMinimumSizeMeters || size.y <= kMinimumSizeMeters)
+        {
+            spdlog::error("Bounds must be greater then {} meters: {}", kMinimumSizeMeters, GetName());
+            return {};
+        }
+        const std::string key = AuthGetKey("open_topography.txt");
+        if (key.empty())
         {
             return {};
         }
@@ -51,7 +61,7 @@ public:
                 maxLatLong.x,
                 minLatLong.y,
                 maxLatLong.y,
-                apiKey),
+                key),
         };
     }
 

@@ -44,6 +44,7 @@ add_library(fire_simulator_core
     src/fire_simulator.cpp
     src/http.cpp
     src/image_viewer.cpp
+    src/math.cpp
     src/mimalloc.cpp
     src/reference.cpp
     src/reference_database.cpp
@@ -86,7 +87,7 @@ function(add_fire_simulator_executable NAME PATH TEST)
     add_executable(${NAME} ${PATH})
     target_link_libraries(${NAME} PRIVATE fire_simulator_core)
     set_target_properties(${NAME} PROPERTIES CXX_STANDARD 23)
-    if(test)
+    if(TEST)
         add_test(NAME ${NAME} COMMAND ${NAME})
     endif()
 endfunction()

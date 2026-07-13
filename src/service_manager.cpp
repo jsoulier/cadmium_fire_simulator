@@ -6,11 +6,11 @@
 #include <memory>
 #include <utility>
 
+#include "math.hpp"
 #include "service_manager.hpp"
 
 static const std::filesystem::path kBasePath = SDL_GetBasePath();
 static const std::filesystem::path kFireSimulatorPath = kBasePath / "fire_simulator_results.csv";
-static constexpr double kMetresPerDegree = 111320.0;
 
 ServiceManager::ServiceManager()
     : ReferenceIndex{0}
@@ -155,7 +155,7 @@ Future<FireResults> ServiceManager::Simulate(Worker& worker, ankerl::unordered_d
         glm::dvec2 max = Database.GetMaxLatLong();
         SDL_assert(size.x > 0 && size.y > 0);
         Simulator.SetSize(size.x, size.y);
-        Simulator.SetResolution(TileResolution * kMetresPerDegree);
+        Simulator.SetResolution(TileResolution * kMathMetersPerDegree);
         Simulator.SetIgniting([selected = std::move(selected)](int x, int y)
         {
             return selected.contains(glm::ivec2{x, y});

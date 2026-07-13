@@ -9,11 +9,13 @@
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cassert>
 #include <cmath>
 #include <filesystem>
 #include <format>
 #include <limits>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <utility>
@@ -76,6 +78,13 @@ void Service::Download(
     SDL_assert(tileResolution > 0.0f);
     SDL_assert(timeResolution > 0.0f);
     TimerBlock(std::format("{} download", GetName()));
+    static std::once_flag onceFlag;
+    std::call_once(onceFlag, []()
+    {
+        GDALAllRegister();
+        const char* projPath[] = { SDL_GetBasePath(), nullptr };
+        OSRSetPROJSearchPaths(projPath);
+    });
     types |= GetRequiredSampleTypes(types);
     SDL_assert((types & ~GetSupportedTypes()) == ServiceSampleType{});
     std::filesystem::create_directories(directory);
@@ -163,9 +172,6 @@ void Service::Download(
     {
         return;
     }
-    GDALAllRegister();
-    const char* projPath[] = { SDL_GetBasePath(), nullptr };
-    OSRSetPROJSearchPaths(projPath);
     ////////////////////////////////////////////////////////////////////////////
     // Download and cache the GeoTIFF. Use a VRT to assemble multiple tiles and clip them to the desired region
     std::filesystem::path filePath = directory / std::format("{}_{}.{}_{}.{}.tif",
@@ -188,9 +194,10 @@ void Service::Download(
         {
             sourceNames.push_back(source.c_str());
         }
-        const char* vrtPath = "/vsimem/service.vrt";
+        static std::atomic_uint64_t vrtIndex = 0;
+        const std::string vrtPath = std::format("/vsimem/service_{}.vrt", vrtIndex++);
         GDALDatasetH vrt = GDALBuildVRT(
-            vrtPath,
+            vrtPath.c_str(),
             sourceNames.size(),
             nullptr,
             sourceNames.data(),
@@ -263,7 +270,7 @@ void Service::Download(
             GDALWarpAppOptionsFree(options);
         }
         GDALClose(vrt);
-        VSIUnlink(vrtPath);
+        VSIUnlink(vrtPath.c_str());
     }
     ////////////////////////////////////////////////////////////////////////////
     // Downsample the high resolution GeoTIFF into a low resolution tile per sample type. Extract into a vector per band
@@ -358,6 +365,7 @@ void Service::Download(
     GDALClose(highResolution);
     ////////////////////////////////////////////////////////////////////////////
     // Create ImTextures for each band
+    if (ImGui::GetCurrentContext())
     {
         for (auto& [type, staticData] : StaticData)
         {
