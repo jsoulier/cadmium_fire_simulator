@@ -65,6 +65,41 @@ Service::DynamicSampleData::DynamicSampleData()
 {
 }
 
+void Service::RenderImGui()
+{
+    float maxTime = 0.0f;
+    for (const auto& [type, data] : DynamicData)
+    {
+        if (!data.Samples.empty())
+        {
+            maxTime = std::max(maxTime, data.Start + (data.Samples.size() - 1) * data.Resolution);
+        }
+    }
+    if (maxTime > 0.0f)
+    {
+        DynamicTime = std::clamp(DynamicTime, 0.0f, maxTime);
+        ImGui::SliderFloat("Time (Hours)", &DynamicTime, 0.0f, maxTime);
+    }
+    for (int index = 0; index < 32; index++)
+    {
+        const ServiceSampleType type = ServiceSampleType(1 << index);
+        const auto it = DynamicData.find(type);
+        if (it == DynamicData.end() || it->second.Samples.empty())
+        {
+            continue;
+        }
+        const ServiceSampleTypeValue value = GetDynamicValue(type, DynamicTime);
+        if (ServiceSampleTypeToFormat(type) == ServiceSampleTypeFormat::U32)
+        {
+            ImGui::Text("%s: %u", ServiceSampleTypeToString(type), value.U32);
+        }
+        else
+        {
+            ImGui::Text("%s: %.3f", ServiceSampleTypeToString(type), value.F32);
+        }
+    }
+}
+
 void Service::Download(
     ServiceSampleType types,
     const glm::dvec2& minLatLong,

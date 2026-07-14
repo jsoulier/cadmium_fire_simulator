@@ -163,7 +163,7 @@ public:
     virtual const char* GetDisplayName() const = 0;
     virtual ServiceSampleType GetSupportedTypes() const = 0;
     virtual ServiceSampleType GetRequiredSampleTypes(ServiceSampleType types) const { return {}; }
-    virtual void RenderImGui() {}
+    virtual void RenderImGui();
     virtual void Download(
         ServiceSampleType types,
         const glm::dvec2& minLatLong,
@@ -217,6 +217,7 @@ protected:
 
     ankerl::unordered_dense::map<ServiceSampleType, StaticSampleData> StaticData;
     ankerl::unordered_dense::map<ServiceSampleType, DynamicSampleData> DynamicData;
+    float DynamicTime = 0.0f;
 };
 
 std::unique_ptr<Service> ServiceCreateESAWorldCover();
