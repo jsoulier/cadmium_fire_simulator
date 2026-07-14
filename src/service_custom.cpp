@@ -61,6 +61,9 @@ public:
                 value.F32 = 30.0f;
                 break;
             case ServiceSampleType::Precipitation:
+            case ServiceSampleType::SolarRadiation:
+            case ServiceSampleType::Snowfall:
+            case ServiceSampleType::SnowDepth:
                 value.F32 = 0.0f;
                 break;
             default:

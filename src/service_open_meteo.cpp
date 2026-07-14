@@ -12,7 +12,6 @@
 #include <utility>
 #include <vector>
 
-#include "fuel_moisture.hpp"
 #include "service.hpp"
 
 class ServiceOpenMeteo : public Service
@@ -39,7 +38,10 @@ public:
             ServiceSampleType::MoistureLiveWoody |
             ServiceSampleType::Temperature |
             ServiceSampleType::RelativeHumidity |
-            ServiceSampleType::Precipitation;
+            ServiceSampleType::Precipitation |
+            ServiceSampleType::SolarRadiation |
+            ServiceSampleType::Snowfall |
+            ServiceSampleType::SnowDepth;
     }
 
     ServiceSampleType GetRequiredSampleTypes(ServiceSampleType types) const override
@@ -52,7 +54,12 @@ public:
             ServiceSampleType::MoistureLiveWoody;
         if ((types & kTypes) != ServiceSampleType{})
         {
-            return ServiceSampleType::Temperature | ServiceSampleType::RelativeHumidity | ServiceSampleType::Precipitation;
+            return ServiceSampleType::Temperature |
+                ServiceSampleType::RelativeHumidity |
+                ServiceSampleType::Precipitation |
+                ServiceSampleType::SolarRadiation |
+                ServiceSampleType::Snowfall |
+                ServiceSampleType::SnowDepth;
         }
         else
         {
@@ -66,7 +73,8 @@ public:
         {
             std::format(
                 "https://archive-api.open-meteo.com/v1/archive?latitude={:.6f}&longitude={:.6f}&start_date={}&end_date={}&"
-                "hourly=wind_speed_10m,wind_direction_10m,temperature_2m,relative_humidity_2m,precipitation&wind_speed_unit=mph&timezone=UTC",
+                "hourly=wind_speed_10m,wind_direction_10m,temperature_2m,relative_humidity_2m,precipitation,shortwave_radiation,snowfall,snow_depth&"
+                "wind_speed_unit=mph&timezone=UTC",
                 (min.x + max.x) * 0.5,
                 (min.y + max.y) * 0.5,
                 start.ToString(),
@@ -94,6 +102,15 @@ public:
             break;
         case ServiceSampleType::Precipitation:
             name = "precipitation";
+            break;
+        case ServiceSampleType::SolarRadiation:
+            name = "shortwave_radiation";
+            break;
+        case ServiceSampleType::Snowfall:
+            name = "snowfall";
+            break;
+        case ServiceSampleType::SnowDepth:
+            name = "snow_depth";
             break;
         case ServiceSampleType::MoistureOneHour:
         case ServiceSampleType::MoistureTenHour:
@@ -131,33 +148,6 @@ public:
             values.push_back(value);
         }
         return values;
-    }
-
-    void DeriveDynamicData(ServiceSampleType type) override
-    {
-        if (type != ServiceSampleType::Temperature)
-        {
-            return;
-        }
-        const DynamicSampleData& temperature = DynamicData.at(ServiceSampleType::Temperature);
-        const DynamicSampleData& humidity = DynamicData.at(ServiceSampleType::RelativeHumidity);
-        const DynamicSampleData& precipitation = DynamicData.at(ServiceSampleType::Precipitation);
-        SDL_assert(temperature.Samples.size() == humidity.Samples.size());
-        SDL_assert(temperature.Samples.size() == precipitation.Samples.size());
-        SetMoisture(ServiceSampleType::MoistureOneHour, FuelMoistureCalculateDead(temperature.Samples, humidity.Samples, precipitation.Samples, 1.0));
-        SetMoisture(ServiceSampleType::MoistureTenHour, FuelMoistureCalculateDead(temperature.Samples, humidity.Samples, precipitation.Samples, 10.0));
-        SetMoisture(ServiceSampleType::MoistureHundredHour, FuelMoistureCalculateDead(temperature.Samples, humidity.Samples, precipitation.Samples, 100.0));
-        SetMoisture(ServiceSampleType::MoistureLiveHerbaceous, FuelMoistureCalculateLive(temperature.Samples, humidity.Samples, precipitation.Samples, 0.0, ServiceSampleType::MoistureLiveHerbaceous));
-        SetMoisture(ServiceSampleType::MoistureLiveWoody, FuelMoistureCalculateLive(temperature.Samples, humidity.Samples, precipitation.Samples, 0.0, ServiceSampleType::MoistureLiveWoody));
-    }
-
-    void SetMoisture(ServiceSampleType type, std::vector<ServiceSampleTypeValue> moisture)
-    {
-        const DynamicSampleData& temperature = DynamicData.at(ServiceSampleType::Temperature);
-        DynamicSampleData& data = DynamicData[type];
-        data.Start = temperature.Start;
-        data.Resolution = temperature.Resolution;
-        data.Samples = std::move(moisture);
     }
 };
 

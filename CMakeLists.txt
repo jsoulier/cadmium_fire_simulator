@@ -18,6 +18,7 @@ set(GLM_ENABLE ON)
 set(SPDLOG_ENABLE ON)
 set(TRACY_ENABLE ON)
 
+add_subdirectory(lib/NFDRS4)
 add_subdirectory(lib/SDL)
 add_subdirectory(lib/behave)
 add_subdirectory(lib/cadmium)
@@ -42,7 +43,6 @@ add_library(fire_simulator_core
     src/fire_model_logger.cpp
     src/fire_results.cpp
     src/fire_simulator.cpp
-    src/fuel_moisture.cpp
     src/http.cpp
     src/image_viewer.cpp
     src/math.cpp
@@ -71,6 +71,7 @@ add_library(fire_simulator_core
 target_include_directories(fire_simulator_core PUBLIC src)
 target_link_libraries(fire_simulator_core PUBLIC
     GDAL::GDAL
+    NFDRS4
     SDL3::SDL3
     behave
     cadmium
