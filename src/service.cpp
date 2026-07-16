@@ -169,7 +169,6 @@ void Service::Download(
         }
         ////////////////////////////////////////////////////////////////////////////
         // Convert to desired resolution (skip high frequency samples or duplicate low frequency ones)
-        float start = startDate.ToEpoch() / 60.0f;
         for (auto& [type, values] : dynamicValues)
         {
             if (values.empty())
@@ -181,11 +180,11 @@ void Service::Download(
                 return a.Time < b.Time;
             });
             DynamicSampleData data;
-            data.Start = 0.0f;
+            data.Start = values.front().Time - startDate.ToEpoch() / 60.0f;
             data.Resolution = timeResolution;
             int index = 0;
             float end = endDate.ToEpoch() / 60.0f;
-            for (float time = start; time <= end; time += timeResolution)
+            for (float time = values.front().Time; time <= end; time += timeResolution)
             {
                 while (index + 1 < values.size() && values[index + 1].Time <= time)
                 {
@@ -205,9 +204,10 @@ void Service::Download(
             const ServiceSampleType type = ServiceSampleType(1 << i);
             if ((dynamicTypes & type) != ServiceSampleType{})
             {
-                DeriveDynamicData(type);
+                DeriveDynamicData(type, minLatLong, maxLatLong, startDate);
             }
         }
+        PostProcessDynamicData();
         for (int i = 0; i < 32; i++)
         {
             const ServiceSampleType type = ServiceSampleType(1 << i);
@@ -408,7 +408,7 @@ void Service::Download(
         }
         {
             TimerBlock(std::format("{} {} post process", GetName(), ServiceSampleTypeToString(type)));
-            PostProcess(type, staticData.Pixels);
+            PostProcessStaticData(type, staticData.Pixels);
         }
         StaticData[type] = std::move(staticData);
     }

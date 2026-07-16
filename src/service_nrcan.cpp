@@ -38,7 +38,7 @@ public:
         return 1;
     }
 
-    void PostProcess(ServiceSampleType type, std::vector<ServiceSampleTypeValue>& pixels) override
+    void PostProcessStaticData(ServiceSampleType type, std::vector<ServiceSampleTypeValue>& pixels) override
     {
         for (ServiceSampleTypeValue& pixel : pixels)
         {

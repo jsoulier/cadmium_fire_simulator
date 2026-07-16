@@ -129,50 +129,50 @@ static constexpr const char* kServiceSampleTypeStrings[] =
 
 static constexpr ServiceSampleTypeFormat kServiceSampleTypeFormats[] =
 {
-    ServiceSampleTypeFormat::U32,
-    ServiceSampleTypeFormat::F32,
-    ServiceSampleTypeFormat::F32,
-    ServiceSampleTypeFormat::F32,
-    ServiceSampleTypeFormat::F32,
-    ServiceSampleTypeFormat::F32,
-    ServiceSampleTypeFormat::F32,
-    ServiceSampleTypeFormat::F32,
-    ServiceSampleTypeFormat::F32,
-    ServiceSampleTypeFormat::F32,
-    ServiceSampleTypeFormat::F32,
-    ServiceSampleTypeFormat::F32,
-    ServiceSampleTypeFormat::F32,
-    ServiceSampleTypeFormat::F32,
-    ServiceSampleTypeFormat::F32,
-    ServiceSampleTypeFormat::F32,
-    ServiceSampleTypeFormat::F32,
-    ServiceSampleTypeFormat::F32,
-    ServiceSampleTypeFormat::F32,
-    ServiceSampleTypeFormat::F32,
+    ServiceSampleTypeFormat::U32, // fuel model
+    ServiceSampleTypeFormat::F32, // elevation
+    ServiceSampleTypeFormat::F32, // slope
+    ServiceSampleTypeFormat::F32, // aspect
+    ServiceSampleTypeFormat::F32, // canopy cover
+    ServiceSampleTypeFormat::F32, // canopy height
+    ServiceSampleTypeFormat::F32, // crown ratio
+    ServiceSampleTypeFormat::F32, // wind speed
+    ServiceSampleTypeFormat::F32, // wind direction
+    ServiceSampleTypeFormat::F32, // 1h moisture
+    ServiceSampleTypeFormat::F32, // 10h moisture
+    ServiceSampleTypeFormat::F32, // 100h moisture
+    ServiceSampleTypeFormat::F32, // live herbaceous moisture
+    ServiceSampleTypeFormat::F32, // live woody moisture
+    ServiceSampleTypeFormat::F32, // temperature
+    ServiceSampleTypeFormat::F32, // relative humidity
+    ServiceSampleTypeFormat::F32, // precipitation
+    ServiceSampleTypeFormat::F32, // solar radiation
+    ServiceSampleTypeFormat::F32, // snowfall
+    ServiceSampleTypeFormat::F32, // snow depth
 };
 
 static constexpr ServiceSampleTypeTime kServiceSampleTypeTimes[] =
 {
-    ServiceSampleTypeTime::Static,
-    ServiceSampleTypeTime::Static,
-    ServiceSampleTypeTime::Static,
-    ServiceSampleTypeTime::Static,
-    ServiceSampleTypeTime::Static,
-    ServiceSampleTypeTime::Static,
-    ServiceSampleTypeTime::Static,
-    ServiceSampleTypeTime::Dynamic,
-    ServiceSampleTypeTime::Dynamic,
-    ServiceSampleTypeTime::Dynamic,
-    ServiceSampleTypeTime::Dynamic,
-    ServiceSampleTypeTime::Dynamic,
-    ServiceSampleTypeTime::Dynamic,
-    ServiceSampleTypeTime::Dynamic,
-    ServiceSampleTypeTime::Dynamic,
-    ServiceSampleTypeTime::Dynamic,
-    ServiceSampleTypeTime::Dynamic,
-    ServiceSampleTypeTime::Dynamic,
-    ServiceSampleTypeTime::Dynamic,
-    ServiceSampleTypeTime::Dynamic,
+    ServiceSampleTypeTime::Static, // fuel model 
+    ServiceSampleTypeTime::Static, // elevation 
+    ServiceSampleTypeTime::Static, // slope 
+    ServiceSampleTypeTime::Static, // aspect 
+    ServiceSampleTypeTime::Static, // canopy cover 
+    ServiceSampleTypeTime::Static, // canopy height 
+    ServiceSampleTypeTime::Static, // crown ratio 
+    ServiceSampleTypeTime::Dynamic, // wind speed 
+    ServiceSampleTypeTime::Dynamic, // wind direction 
+    ServiceSampleTypeTime::Dynamic, // 1h moisture 
+    ServiceSampleTypeTime::Dynamic, // 10h moisture 
+    ServiceSampleTypeTime::Dynamic, // 100h moisture 
+    ServiceSampleTypeTime::Dynamic, // live herbaceous moisture 
+    ServiceSampleTypeTime::Dynamic, // live woody moisture 
+    ServiceSampleTypeTime::Dynamic, // temperature 
+    ServiceSampleTypeTime::Dynamic, // relative humidity 
+    ServiceSampleTypeTime::Dynamic, // precipitation 
+    ServiceSampleTypeTime::Dynamic, // solar radiation 
+    ServiceSampleTypeTime::Dynamic, // snowfall 
+    ServiceSampleTypeTime::Dynamic, // snow depth
 };
 
 uint32_t ServiceSampleTypeToIndex(ServiceSampleType type);
@@ -211,10 +211,11 @@ public:
 protected:
     virtual std::vector<std::string> GetURLs(const glm::dvec2& minLatLong, const glm::dvec2& maxLatLong, const Date& startDate, const Date& endDate) const { return {}; }
     virtual std::vector<ServiceSampleTypeDynamicValue> GetDynamicValues(const std::string& response, ServiceSampleType type) const { return {}; }
-    virtual void DeriveDynamicData(ServiceSampleType type) {}
+    virtual void DeriveDynamicData(ServiceSampleType type, const glm::dvec2& minLatLong, const glm::dvec2& maxLatLong, const Date& startDate) {}
+    virtual void PostProcessDynamicData() {}
     virtual int GetBand(ServiceSampleType type) const { return 0; }
     virtual void DeriveStaticData(ServiceSampleType type, GDALDatasetH lowResolution, const std::string& directory) {}
-    virtual void PostProcess(ServiceSampleType type, std::vector<ServiceSampleTypeValue>& pixels) {}
+    virtual void PostProcessStaticData(ServiceSampleType type, std::vector<ServiceSampleTypeValue>& pixels) {}
     ServiceSampleTypeValue GetDynamicValue(ServiceSampleType type, float time) const;
     void DEMProcessing(GDALDatasetH elevation, const std::string& directory, ServiceSampleType type);
 

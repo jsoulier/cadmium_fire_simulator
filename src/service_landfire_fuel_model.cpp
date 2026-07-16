@@ -31,7 +31,7 @@ public:
         return "RSP_NearestNeighbor";
     }
 
-    void PostProcess(ServiceSampleType type, std::vector<ServiceSampleTypeValue>& pixels) override
+    void PostProcessStaticData(ServiceSampleType type, std::vector<ServiceSampleTypeValue>& pixels) override
     {
         for (ServiceSampleTypeValue& pixel : pixels)
         {
