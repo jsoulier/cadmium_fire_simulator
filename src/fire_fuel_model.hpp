@@ -10,6 +10,7 @@ using FireFuelModelType = uint8_t;
 
 bool FireFuelModelTypeIsBurnable(FireFuelModelType fuelModel);
 ImColor FireFuelModelTypeGetColor(FireFuelModelType fuelModel);
+char FireFuelModelToNFDRS(FireFuelModelType fuelModel);
 
 // original
 inline constexpr FireFuelModelType kFireFuelModelFM1 = 1;

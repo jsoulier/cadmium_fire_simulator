@@ -117,3 +117,50 @@ ImColor FireFuelModelTypeGetColor(FireFuelModelType fuelModel)
     SDL_assert(false);
     return ImColor(0, 0, 0);
 }
+
+char FireFuelModelToNFDRS(FireFuelModelType fuelModel)
+{
+    switch (fuelModel)
+    {
+    case kFireFuelModelFM1:
+    case kFireFuelModelFM3:
+        return 'V';
+    case kFireFuelModelFM2:
+        return 'W';
+    case kFireFuelModelFM4:
+    case kFireFuelModelFM5:
+    case kFireFuelModelFM6:
+    case kFireFuelModelFM7:
+        return 'X';
+    case kFireFuelModelFM8:
+    case kFireFuelModelFM9:
+    case kFireFuelModelFM10:
+        return 'Y';
+    case kFireFuelModelFM11:
+    case kFireFuelModelFM12:
+    case kFireFuelModelFM13:
+        return 'Z';
+    }
+    if (fuelModel >= kFireFuelModelGR1 && fuelModel <= kFireFuelModelVHa)
+    {
+        return 'V';
+    }
+    else if (fuelModel >= kFireFuelModelGS1 && fuelModel <= kFireFuelModelGS4)
+    {
+        return 'W';
+    }
+    else if (fuelModel >= kFireFuelModelSH1 && fuelModel <= kFireFuelModelVMaa)
+    {
+        return 'X';
+    }
+    else if (fuelModel >= kFireFuelModelTU1 && fuelModel <= kFireFuelModelFEUC)
+    {
+        return 'Y';
+    }
+    else if (fuelModel >= kFireFuelModelSB1 && fuelModel <= kFireFuelModelSB4)
+    {
+        return 'Z';
+    }
+    SDL_assert(false);
+    return 'V';
+}

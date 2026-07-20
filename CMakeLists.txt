@@ -52,6 +52,7 @@ add_library(fire_simulator_core
     src/reference_eonet.cpp
     src/reference_firms.cpp
     src/service.cpp
+    src/service_context.cpp
     src/service_custom.cpp
     src/service_esa_worldcover.cpp
     src/service_landfire.cpp

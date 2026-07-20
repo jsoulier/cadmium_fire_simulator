@@ -23,53 +23,6 @@
 
 static constexpr int kPrefixDays = 56; // extra days required to compute moisture levels
 
-static char GetNFDRSFuelModel(FireFuelModelType fuelModel)
-{
-    switch (fuelModel)
-    {
-    case kFireFuelModelFM1:
-    case kFireFuelModelFM3:
-        return 'V';
-    case kFireFuelModelFM2:
-        return 'W';
-    case kFireFuelModelFM4:
-    case kFireFuelModelFM5:
-    case kFireFuelModelFM6:
-    case kFireFuelModelFM7:
-        return 'X';
-    case kFireFuelModelFM8:
-    case kFireFuelModelFM9:
-    case kFireFuelModelFM10:
-        return 'Y';
-    case kFireFuelModelFM11:
-    case kFireFuelModelFM12:
-    case kFireFuelModelFM13:
-        return 'Z';
-    }
-    if (fuelModel >= kFireFuelModelGR1 && fuelModel <= kFireFuelModelVHa)
-    {
-        return 'V';
-    }
-    else if (fuelModel >= kFireFuelModelGS1 && fuelModel <= kFireFuelModelGS4)
-    {
-        return 'W';
-    }
-    else if (fuelModel >= kFireFuelModelSH1 && fuelModel <= kFireFuelModelVMaa)
-    {
-        return 'X';
-    }
-    else if (fuelModel >= kFireFuelModelTU1 && fuelModel <= kFireFuelModelFEUC)
-    {
-        return 'Y';
-    }
-    else if (fuelModel >= kFireFuelModelSB1 && fuelModel <= kFireFuelModelSB4)
-    {
-        return 'Z';
-    }
-    SDL_assert(false);
-    return 'V';
-}
-
 class ServiceOpenMeteo : public Service
 {
 public:
@@ -253,7 +206,7 @@ public:
         const auto mode = std::max_element(fuelModelCounts.begin(), fuelModelCounts.end());
         SDL_assert(mode != fuelModelCounts.end() && *mode > 0);
         const FireFuelModelType modeFuelModel = std::distance(fuelModelCounts.begin(), mode);
-        const char fuelModel = GetNFDRSFuelModel(modeFuelModel);
+        const char fuelModel = FireFuelModelToNFDRS(modeFuelModel);
         NFDRS4 nfdrs;
         nfdrs.Init(latitude, fuelModel, 1, 0.0, true, true, false, 100, 13);
         nfdrs.SetHerbGSIparams(
