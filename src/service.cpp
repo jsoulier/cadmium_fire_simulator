@@ -4,7 +4,6 @@
 #include <gdal_utils.h>
 #include <gdalwarper.h>
 #include <imgui.h>
-#include <imgui_internal.h>
 #include <ogr_srs_api.h>
 #include <spdlog/spdlog.h>
 
@@ -14,7 +13,6 @@
 #include <cmath>
 #include <filesystem>
 #include <format>
-#include <limits>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -23,6 +21,7 @@
 
 #include "service.hpp"
 #include "http.hpp"
+#include "service_context.hpp"
 #include "timer.hpp"
 
 uint32_t ServiceSampleTypeToIndex(ServiceSampleType type)
@@ -40,36 +39,21 @@ const char* ServiceSampleTypeToString(ServiceSampleType type)
     return kServiceSampleTypeStrings[ServiceSampleTypeToIndex(type)];
 }
 
-ServiceSampleTypeTime ServiceSampleTypeToTime(ServiceSampleType type)
-{
-    return kServiceSampleTypeTimes[ServiceSampleTypeToIndex(type)];
-}
-
 ServiceSampleTypeFormat ServiceSampleTypeToFormat(ServiceSampleType type)
 {
     return kServiceSampleTypeFormats[ServiceSampleTypeToIndex(type)];
 }
 
-Service::StaticSampleData::StaticSampleData()
-    : Width(0)
-    , Height(0)
-    , GeoTransform{}
-    , InverseGeoTransform{}
-    , Texture{}
-{
-}
-
-Service::DynamicSampleData::DynamicSampleData()
-    : Start(0.0f)
-    , Resolution(0.0f)
-{
-}
-
-void Service::RenderImGui()
+void Service::RenderImGui(ServiceContext& context)
 {
     float maxTime = 0.0f;
-    for (const auto& [type, data] : DynamicData)
+    for (const auto& [type, value] : context)
     {
+        if ((GetSupportedTypes() & type) == ServiceSampleType{} || !std::holds_alternative<ServiceContextDynamicData>(value))
+        {
+            continue;
+        }
+        const ServiceContextDynamicData& data = std::get<ServiceContextDynamicData>(value);
         if (!data.Samples.empty())
         {
             maxTime = std::max(maxTime, data.Start + (data.Samples.size() - 1) * data.Resolution);
@@ -77,18 +61,26 @@ void Service::RenderImGui()
     }
     if (maxTime > 0.0f)
     {
-        DynamicTime = std::clamp(DynamicTime, 0.0f, maxTime);
-        ImGui::SliderFloat("Time (Hours)", &DynamicTime, 0.0f, maxTime);
+        Time = std::clamp(Time, 0.0f, maxTime);
+        ImGui::SliderFloat("Time (Hours)", &Time, 0.0f, maxTime);
     }
-    for (int index = 0; index < 32; index++)
+    for (int index = 0; index < kServiceSampleTypeMax; index++)
     {
-        const ServiceSampleType type = ServiceSampleType(1 << index);
-        const auto it = DynamicData.find(type);
-        if (it == DynamicData.end() || it->second.Samples.empty())
+        const ServiceSampleType type = ServiceSampleTypeFromIndex(index);
+        if ((GetSupportedTypes() & type) == ServiceSampleType{})
         {
             continue;
         }
-        const ServiceSampleTypeValue value = GetDynamicValue(type, DynamicTime);
+        if (!context.Contains(type))
+        {
+            continue;
+        }
+        const ServiceContext::DataValue& data = context.At(type);
+        if (!std::holds_alternative<ServiceContextDynamicData>(data) || std::get<ServiceContextDynamicData>(data).Samples.empty())
+        {
+            continue;
+        }
+        const ServiceSampleTypeValue value = context.GetValue(type, glm::dvec2{}, Time);
         if (ServiceSampleTypeToFormat(type) == ServiceSampleTypeFormat::U32)
         {
             ImGui::Text("%s: %u", ServiceSampleTypeToString(type), value.U32);
@@ -101,6 +93,7 @@ void Service::RenderImGui()
 }
 
 void Service::Download(
+    ServiceContext& context,
     ServiceSampleType types,
     const glm::dvec2& minLatLong,
     const glm::dvec2& maxLatLong,
@@ -120,23 +113,28 @@ void Service::Download(
         const char* projPath[] = { SDL_GetBasePath(), nullptr };
         OSRSetPROJSearchPaths(projPath);
     });
-    types |= GetRequiredSampleTypes(types);
-    SDL_assert((types & ~GetSupportedTypes()) == ServiceSampleType{});
-    std::filesystem::create_directories(directory);
-    StaticData.clear();
-    DynamicData.clear();
-    ////////////////////////////////////////////////////////////////////////////
-    // Handle dynamic types
-    ServiceSampleType dynamicTypes{};
-    for (uint32_t i = 0; i < 32; ++i)
+    const ServiceSampleType requestedTypes = types;
+    ServiceSampleType derivedTypes = GetDerivedSampleTypes() & requestedTypes;
+    ServiceSampleType requiredTypes = GetRequiredSampleTypes(types);
+    types |= requiredTypes; // ensure dynamic dependencies are satisfied
+    for (int index = 0; index < kServiceSampleTypeMax; index++)
     {
-        const ServiceSampleType type = ServiceSampleType(1 << i);
-        if ((types & type) != ServiceSampleType{} && ServiceSampleTypeToTime(type) == ServiceSampleTypeTime::Dynamic)
+        const ServiceSampleType type = ServiceSampleTypeFromIndex(index);
+        if ((requiredTypes & ServiceSampleType::Dynamic & type) != ServiceSampleType{} && // is a required dynamic type
+            (requestedTypes & type) == ServiceSampleType{} && // is not a requested type
+            context.Contains(type)) // already contains the type
         {
-            dynamicTypes |= type;
+            types = types & ~type; // dependency already satisfied, remove the type
         }
     }
-    if (dynamicTypes != ServiceSampleType{})
+    SDL_assert((types & ~GetSupportedTypes()) == ServiceSampleType{});
+    std::filesystem::create_directories(directory);
+    for (int index = 0; index < kServiceSampleTypeMax; index++)
+    {
+        const ServiceSampleType type = ServiceSampleTypeFromIndex(index);
+        SDL_assert((requestedTypes & type) == ServiceSampleType{} || !context.Contains(type)); // didn't request an already satisfied type
+    }
+    if ((types & ServiceSampleType::Dynamic) != ServiceSampleType{}) // has dynamic types
     {
         TimerBlock(std::format("{} dynamic", GetName()));
         ankerl::unordered_dense::map<ServiceSampleType, std::vector<ServiceSampleTypeDynamicValue>> dynamicValues;
@@ -148,10 +146,10 @@ void Service::Download(
             {
                 return;
             }
-            for (int i = 0; i < 32; i++)
+            for (int i = 0; i < kServiceSampleTypeMax; i++)
             {
-                const ServiceSampleType type = ServiceSampleType(1 << i);
-                if ((dynamicTypes & type) == ServiceSampleType{})
+                const ServiceSampleType type = ServiceSampleTypeFromIndex(i);
+                if ((types & ServiceSampleType::Dynamic & type) == ServiceSampleType{}) // is a dynamic type
                 {
                     continue;
                 }
@@ -167,8 +165,7 @@ void Service::Download(
                 }
             }
         }
-        ////////////////////////////////////////////////////////////////////////////
-        // Convert to desired resolution (skip high frequency samples or duplicate low frequency ones)
+        // convert to desired resolution (either an upsample or downsample)
         for (auto& [type, values] : dynamicValues)
         {
             if (values.empty())
@@ -179,13 +176,14 @@ void Service::Download(
             {
                 return a.Time < b.Time;
             });
-            DynamicSampleData data;
+            ServiceContextDynamicData data;
             data.Start = values.front().Time - startDate.ToEpoch() / 60.0f;
             data.Resolution = timeResolution;
             int index = 0;
             float end = endDate.ToEpoch() / 60.0f;
             for (float time = values.front().Time; time <= end; time += timeResolution)
             {
+                // add an index if we're ahead (skip) or noop if we're behind (duplicate)
                 while (index + 1 < values.size() && values[index + 1].Time <= time)
                 {
                     index++;
@@ -197,33 +195,32 @@ void Service::Download(
                 spdlog::error("Failed to sample dynamic values for {}: {}", ServiceSampleTypeToString(type), GetName());
                 continue;
             }
-            DynamicData[type] = std::move(data);
+            context[type] = std::move(data);
         }
-        for (int i = 0; i < 32; i++)
+        for (int i = 0; i < kServiceSampleTypeMax; i++)
         {
-            const ServiceSampleType type = ServiceSampleType(1 << i);
-            if ((dynamicTypes & type) != ServiceSampleType{})
+            const ServiceSampleType type = ServiceSampleTypeFromIndex(i);
+            if ((types & ServiceSampleType::Dynamic & type) != ServiceSampleType{})
             {
-                DeriveDynamicData(type, minLatLong, maxLatLong, startDate);
+                DeriveDynamicData(context, type, minLatLong, maxLatLong, startDate);
             }
         }
-        PostProcessDynamicData();
-        for (int i = 0; i < 32; i++)
+        PostProcessDynamicData(context);
+        for (int i = 0; i < kServiceSampleTypeMax; i++)
         {
-            const ServiceSampleType type = ServiceSampleType(1 << i);
-            if ((dynamicTypes & type) != ServiceSampleType{} && !DynamicData.contains(type))
+            const ServiceSampleType type = ServiceSampleTypeFromIndex(i);
+            if ((types & ServiceSampleType::Dynamic & type) != ServiceSampleType{} &&
+                !context.Contains(type))
             {
                 spdlog::error("Failed to get dynamic values for {}: {}", ServiceSampleTypeToString(type), GetName());
             }
         }
-        types = types & ~dynamicTypes;
     }
-    if (types == ServiceSampleType{})
+    if ((types & ~ServiceSampleType::Dynamic) == ServiceSampleType{})
     {
+        SDL_assert((types & ServiceSampleType::Static) == ServiceSampleType{});
         return;
     }
-    ////////////////////////////////////////////////////////////////////////////
-    // Download and cache the GeoTIFF. Use a VRT to assemble multiple tiles and clip them to the desired region
     std::filesystem::path filePath = directory / std::format("{}_{}.{}_{}.{}.tif",
         GetName(),
         minLatLong.x,
@@ -258,8 +255,6 @@ void Service::Download(
             spdlog::error("Failed to build VRT for {}: {}", GetName(), CPLGetLastErrorMsg());
             return;
         }
-        ////////////////////////////////////////////////////////////////////////
-        // Check if the tile is in EPSG:4326 (WGS 84) (uses lat/long). If not, convert it to EPSG:4326
         bool isWgs84 = false;
         const char* sourceWkt = GDALGetProjectionRef(vrt);
         if (sourceWkt && sourceWkt[0])
@@ -276,6 +271,7 @@ void Service::Download(
         const std::string south = std::format("{}", minLatLong.x);
         const std::string east = std::format("{}", maxLatLong.y);
         const std::string north = std::format("{}", maxLatLong.x);
+        // clip before downloading (otherwise services like NRCan download all of Canada)
         if (isWgs84)
         {
             TimerBlock(std::format("{} clip", GetName()));
@@ -302,7 +298,7 @@ void Service::Download(
             TimerBlock(std::format("{} clip and reproject", GetName()));
             const char* args[] =
             {
-                "-t_srs", "EPSG:4326",
+                "-t_srs", "EPSG:4326", // convert to EPSG:4326 (WGS 84) (uses lat/long) 
                 "-te", west.c_str(), south.c_str(), east.c_str(), north.c_str(),
                 "-r", "near",
                 nullptr
@@ -322,8 +318,6 @@ void Service::Download(
         GDALClose(vrt);
         VSIUnlink(vrtPath.c_str());
     }
-    ////////////////////////////////////////////////////////////////////////////
-    // Downsample the high resolution GeoTIFF into a low resolution tile per sample type. Extract into a vector per band
     GDALDatasetH highResolution = GDALOpen(filePath.string().c_str(), GA_ReadOnly);
     if (!highResolution)
     {
@@ -338,10 +332,11 @@ void Service::Download(
         maxLatLong.x,
         maxLatLong.y,
         tileResolution)).string();
-    for (int i = 0; i < 32; i++)
+    // downsample high resolution GeoTIFF to low resolution array of pixels per band
+    for (int i = 0; i < kServiceSampleTypeMax; i++)
     {
-        const ServiceSampleType type = ServiceSampleType(1 << i);
-        if ((types & type) == ServiceSampleType{})
+        const ServiceSampleType type = ServiceSampleTypeFromIndex(i);
+        if ((types & ~ServiceSampleType::Dynamic & type) == ServiceSampleType{})
         {
             continue;
         }
@@ -376,15 +371,27 @@ void Service::Download(
             spdlog::error("Failed to open {}: {}", lowResolutionFilePath.string(), CPLGetLastErrorMsg());
             continue;
         }
+        // create e.g. slope/aspect from elevation
+        for (int outIndex = 0; outIndex < kServiceSampleTypeMax; outIndex++)
         {
-            TimerBlock(std::format("{} {} derive", GetName(), ServiceSampleTypeToString(type)));
-            DeriveStaticData(type, lowResolution, lowResolutionDirectory);
+            const ServiceSampleType outType = ServiceSampleTypeFromIndex(outIndex);
+            if ((derivedTypes & outType) == ServiceSampleType{})
+            {
+                continue;
+            }
+            TimerBlock(std::format("{} {} derive", GetName(), ServiceSampleTypeToString(outType)));
+            DeriveStaticData(type, outType, lowResolution, lowResolutionDirectory);
         }
-        StaticSampleData staticData;
+        if ((requestedTypes & type) == ServiceSampleType{})
+        {
+            GDALClose(lowResolution);
+            continue;
+        }
+        ServiceContextStaticData staticData;
         {
             TimerBlock(std::format("{} {} static", GetName(), ServiceSampleTypeToString(type)));
-            staticData.Width = GDALGetRasterXSize(lowResolution);
-            staticData.Height = GDALGetRasterYSize(lowResolution);
+            staticData.Size.x = GDALGetRasterXSize(lowResolution);
+            staticData.Size.y = GDALGetRasterYSize(lowResolution);
             if (GDALGetGeoTransform(lowResolution, staticData.GeoTransform) != CE_None ||
                 GDALInvGeoTransform(staticData.GeoTransform, staticData.InverseGeoTransform) == FALSE)
             {
@@ -393,11 +400,11 @@ void Service::Download(
                 continue;
             }
             staticData.Wkt = GDALGetProjectionRef(lowResolution);
-            staticData.Pixels.resize(size_t(staticData.Width) * size_t(staticData.Height));
+            staticData.Pixels.resize(staticData.Size.x * staticData.Size.y);
             CPLErr status = GDALRasterIO(
                 GDALGetRasterBand(lowResolution, 1), GF_Read,
-                0, 0, staticData.Width, staticData.Height,
-                staticData.Pixels.data(), staticData.Width, staticData.Height,
+                0, 0, staticData.Size.x, staticData.Size.y,
+                staticData.Pixels.data(), staticData.Size.x, staticData.Size.y,
                 ServiceSampleTypeToFormat(type) == ServiceSampleTypeFormat::U32 ? GDT_UInt32 : GDT_Float32, 0, 0);
             GDALClose(lowResolution);
             if (status != CE_None)
@@ -410,148 +417,9 @@ void Service::Download(
             TimerBlock(std::format("{} {} post process", GetName(), ServiceSampleTypeToString(type)));
             PostProcessStaticData(type, staticData.Pixels);
         }
-        StaticData[type] = std::move(staticData);
+        context[type] = std::move(staticData);
     }
     GDALClose(highResolution);
-    ////////////////////////////////////////////////////////////////////////////
-    // Create ImTextures for each band
-    if (ImGui::GetCurrentContext())
-    {
-        for (auto& [type, staticData] : StaticData)
-        {
-            TimerBlock(std::format("{} {} texture", GetName(), ServiceSampleTypeToString(type)));
-            ImTextureData* texture = IM_NEW(ImTextureData)();
-            texture->Create(ImTextureFormat_RGBA32, staticData.Width, staticData.Height);
-            uint32_t* texels = reinterpret_cast<uint32_t*>(texture->GetPixels());
-            if (type == ServiceSampleType::FuelModel)
-            {
-                SDL_assert(ServiceSampleTypeToFormat(type) == ServiceSampleTypeFormat::U32);
-                for (size_t i = 0; i < staticData.Pixels.size(); i++)
-                {
-                    texels[i] = FireFuelModelTypeGetColor(FireFuelModelType(staticData.Pixels[i].U32));
-                }
-            }
-            else
-            {
-                SDL_assert(ServiceSampleTypeToFormat(type) == ServiceSampleTypeFormat::F32);
-                static constexpr float kNoData = -9999.0f;
-                float minValue = std::numeric_limits<float>::max();
-                float maxValue = std::numeric_limits<float>::lowest();
-                for (const ServiceSampleTypeValue& pixel : staticData.Pixels)
-                {
-                    if (pixel.F32 == kNoData)
-                    {
-                        continue;
-                    }
-                    minValue = std::min(minValue, pixel.F32);
-                    maxValue = std::max(maxValue, pixel.F32);
-                }
-                const float range = maxValue - minValue;
-                for (size_t i = 0; i < staticData.Pixels.size(); i++)
-                {
-                    uint8_t gray = 0;
-                    if (staticData.Pixels[i].F32 != kNoData && range > 0.0f)
-                    {
-                        gray = (staticData.Pixels[i].F32 - minValue) / range * 255.0f;
-                    }
-                    texels[i] = IM_COL32(gray, gray, gray, 255);
-                }
-            }
-            ImGui::RegisterUserTexture(texture);
-            staticData.Texture = texture->GetTexRef();
-        }
-    }
-}
-
-ServiceSampleTypeValue Service::GetValue(ServiceSampleType type, const glm::dvec2& latLong, float time) const
-{
-    if (ServiceSampleTypeToTime(type) == ServiceSampleTypeTime::Dynamic)
-    {
-        return GetDynamicValue(type, time);
-    }
-    else
-    {
-        const auto it = StaticData.find(type);
-        SDL_assert(it != StaticData.end());
-        const StaticSampleData& staticData = it->second;
-        // TODO: ugly hack for ServiceCustom
-        if (staticData.Pixels.size() == 1)
-        {
-            return staticData.Pixels.front();
-        }
-        const double* transform = staticData.InverseGeoTransform;
-        int x = int(transform[0] + latLong.y * transform[1] + latLong.x * transform[2]);
-        int y = int(transform[3] + latLong.y * transform[4] + latLong.x * transform[5]);
-        return GetValue(type, x, y, time);
-    }
-}
-
-ServiceSampleTypeValue Service::GetValue(ServiceSampleType type, int x, int y, float time) const
-{
-    if (ServiceSampleTypeToTime(type) == ServiceSampleTypeTime::Dynamic)
-    {
-        return GetDynamicValue(type, time);
-    }
-    else
-    {
-        const auto it = StaticData.find(type);
-        SDL_assert(it != StaticData.end());
-        const StaticSampleData& staticData = it->second;
-        // TODO: ugly hack for ServiceCustom
-        if (staticData.Pixels.size() == 1)
-        {
-            return staticData.Pixels.front();
-        }
-        // TODO: should assert?
-        if (x < 0 || y < 0 || x >= staticData.Width || y >= staticData.Height)
-        {
-            return ServiceSampleTypeValue{};
-        }
-        return staticData.Pixels[size_t(y) * staticData.Width + x];
-    }
-}
-
-ServiceSampleTypeValue Service::GetDynamicValue(ServiceSampleType type, float time) const
-{
-    SDL_assert(ServiceSampleTypeToTime(type) == ServiceSampleTypeTime::Dynamic);
-    const auto it = DynamicData.find(type);
-    SDL_assert(it != DynamicData.end());
-    const DynamicSampleData& data = it->second;
-    if (data.Samples.empty() || data.Resolution == 0.0f)
-    {
-        return ServiceSampleTypeValue{};
-    }
-    int index = std::round((time - data.Start) / data.Resolution);
-    index = std::clamp(index, 0, int(data.Samples.size() - 1));
-    return data.Samples[index];
-}
-
-glm::ivec2 Service::GetSize(ServiceSampleType type) const
-{
-    // TODO: should assert?
-    const auto it = StaticData.find(type);
-    if (it != StaticData.end())
-    {
-        return glm::ivec2(it->second.Width, it->second.Height);
-    }
-    else
-    {
-        return glm::ivec2(0);
-    }
-}
-
-ImTextureRef Service::GetTextureRef(ServiceSampleType type)
-{
-    // TODO: should assert?
-    const auto it = StaticData.find(type);
-    if (it != StaticData.end())
-    {
-        return it->second.Texture;
-    } 
-    else
-    {
-        return ImTextureRef();
-    }
 }
 
 void Service::DEMProcessing(GDALDatasetH elevation, const std::string& directory, ServiceSampleType type)

@@ -9,6 +9,7 @@
 #include <memory>
 
 #include "service.hpp"
+#include "service_context.hpp"
 
 int main(int argc, char** argv)
 {
@@ -29,8 +30,15 @@ int main(int argc, char** argv)
     std::filesystem::remove_all(root);
     std::for_each(std::execution::par, services.begin(), services.end(), [&](const std::unique_ptr<Service>& service)
     {
+        // some services (e.g. open meteo) have dependencies on fuel models
+        ServiceContext context;
+        ServiceContextStaticData fuelModel;
+        fuelModel.Pixels.push_back({.U32 = kFireFuelModelGR2});
+        context[ServiceSampleType::FuelModel] = std::move(fuelModel);
+
         const std::filesystem::path directory = root / service->GetName();
         service->Download(
+            context,
             service->GetSupportedTypes(),
             {48.999, -122.751},
             {49.001, -122.749},
@@ -39,6 +47,7 @@ int main(int argc, char** argv)
             Date(2025, 1, 1),
             Date(2025, 1, 1),
             directory);
+        context.PostDownload();
         SDL_assert(std::filesystem::exists(directory) && !std::filesystem::is_empty(directory));
         for (const std::filesystem::directory_entry& entry : std::filesystem::recursive_directory_iterator(directory))
         {

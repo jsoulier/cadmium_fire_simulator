@@ -3,18 +3,21 @@
 
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "service.hpp"
+#include "service_context.hpp"
 
 class ServiceCustom : public Service
 {
 public:
     ServiceCustom()
     {
-        for (int index = 0; index < 32; index++)
+        Values.resize(SDL_arraysize(kServiceSampleTypeStrings));
+        for (int index = 0; index < kServiceSampleTypeMax; index++)
         {
-            const ServiceSampleType type = ServiceSampleType(1 << index);
+            const ServiceSampleType type = ServiceSampleTypeFromIndex(index);
             if ((ServiceSampleType::All & type) == ServiceSampleType{})
             {
                 continue;
@@ -70,17 +73,7 @@ public:
                 SDL_assert(false);
                 break;
             }
-            if (ServiceSampleTypeToTime(type) == ServiceSampleTypeTime::Dynamic)
-            {
-                DynamicSampleData& data = DynamicData[type];
-                data.Start = 0.0f;
-                data.Resolution = 1.0f;
-                data.Samples.push_back(value);
-            }
-            else
-            {
-                StaticData[type].Pixels.push_back(value);
-            }
+            Values[ServiceSampleTypeToIndex(type)] = value;
         }
     }
 
@@ -99,24 +92,16 @@ public:
         return ServiceSampleType::All;
     }
 
-    void RenderImGui() override
+    void RenderImGui(ServiceContext& context) override
     {
-        for (int index = 0; index < 32; index++)
+        for (int index = 0; index < kServiceSampleTypeMax; index++)
         {
-            const ServiceSampleType type = ServiceSampleType(1 << index);
+            const ServiceSampleType type = ServiceSampleTypeFromIndex(index);
             if ((ServiceSampleType::All & type) == ServiceSampleType{})
             {
                 continue;
             }
-            ServiceSampleTypeValue* value = nullptr;
-            if (ServiceSampleTypeToTime(type) == ServiceSampleTypeTime::Dynamic)
-            {
-                value = &DynamicData.at(type).Samples.front();
-            }
-            else
-            {
-                value = &StaticData.at(type).Pixels.front();
-            }
+            ServiceSampleTypeValue* value = &Values[ServiceSampleTypeToIndex(type)];
             std::string label = std::format("{}##Custom", ServiceSampleTypeToString(type));
             if (ServiceSampleTypeToFormat(type) == ServiceSampleTypeFormat::U32)
             {
@@ -134,6 +119,7 @@ public:
     }
 
     void Download(
+        ServiceContext& context,
         ServiceSampleType types,
         const glm::dvec2& minLatLong,
         const glm::dvec2& maxLatLong,
@@ -143,7 +129,32 @@ public:
         const Date& endDate,
         const std::filesystem::path& directory) override
     {
+        for (int index = 0; index < kServiceSampleTypeMax; index++)
+        {
+            const ServiceSampleType type = ServiceSampleTypeFromIndex(index);
+            if ((types & type) == ServiceSampleType{})
+            {
+                continue;
+            }
+            const ServiceSampleTypeValue value = Values[ServiceSampleTypeToIndex(type)];
+            if ((ServiceSampleType::Dynamic & type) != ServiceSampleType{})
+            {
+                ServiceContextDynamicData data;
+                data.Start = 0.0f;
+                data.Resolution = timeResolution;
+                data.Samples.push_back(value);
+                context[type] = std::move(data);
+            }
+            else
+            {
+                ServiceContextStaticData data;
+                data.Pixels.push_back(value);
+                context[type] = std::move(data);
+            }
+        }
     }
+
+    std::vector<ServiceSampleTypeValue> Values;
 };
 
 std::unique_ptr<Service> ServiceCreateCustom()

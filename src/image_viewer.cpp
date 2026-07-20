@@ -39,14 +39,13 @@ void ImageViewer::Draw(ServiceManager& serviceManager, std::optional<FireResults
         active->Update(Time);
     }
     ServiceSampleType type = Type;
-    std::unique_ptr<Service>& service = serviceManager.GetService(type);
     ImTextureRef overlay;
     if (active && active->GetTexture() && active->GetTexture()->GetTexID() != ImTextureID_Invalid)
     {
         overlay = active->GetTexture()->GetTexRef();
     }
-    ImTextureRef texture = service->GetTextureRef(type);
-    glm::ivec2 size = service->GetSize(type);
+    ImTextureRef texture = serviceManager.GetTextureRef(type);
+    glm::ivec2 size = serviceManager.GetSize(type);
     if (texture.GetTexID() == ImTextureID_Invalid || size.x <= 0 || size.y <= 0)
     {
         return;
@@ -100,7 +99,7 @@ void ImageViewer::Draw(ServiceManager& serviceManager, std::optional<FireResults
             {
                 Selected = {x, y};
             }
-            ServiceSampleTypeValue pixel = service->GetValue(type, x, y, Time);
+            ServiceSampleTypeValue pixel = serviceManager.GetValue(type, x, y, Time);
             if (ServiceSampleTypeToFormat(type) == ServiceSampleTypeFormat::U32)
             {
                 ImGui::SetTooltip("%u", pixel.U32);

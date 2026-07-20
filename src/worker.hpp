@@ -1,7 +1,5 @@
 #pragma once
 
-#include <SDL3/SDL_assert.h>
-
 #include <condition_variable>
 #include <deque>
 #include <functional>

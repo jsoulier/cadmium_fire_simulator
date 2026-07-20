@@ -29,33 +29,41 @@ ServiceManager::ServiceManager()
     Services.emplace_back(ServiceCreateLandfireCanopyCover());
     Services.emplace_back(ServiceCreateLandfireCanopyHeight());
     Services.emplace_back(ServiceCreateOpenMeteo());
-    for (int i = 0; i < 32; i++)
-    {
-        const ServiceSampleType type = ServiceSampleType(1 << i);
-        if ((ServiceSampleType::All & type) != ServiceSampleType{})
-        {
-            ServiceIndices[type] = 3;
-        }
-    }
-    ServiceIndices[ServiceSampleType::FuelModel] = 0;
-    ServiceIndices[ServiceSampleType::Elevation] = 2;
-    ServiceIndices[ServiceSampleType::Slope] = 2;
-    ServiceIndices[ServiceSampleType::Aspect] = 2;
-    ServiceIndices[ServiceSampleType::Temperature] = 10;
-    ServiceIndices[ServiceSampleType::RelativeHumidity] = 10;
-    ServiceIndices[ServiceSampleType::Precipitation] = 10;
+    ServiceIndices.fill(3);
+    ServiceIndices[ServiceSampleTypeToIndex(ServiceSampleType::FuelModel)] = 0;
+    ServiceIndices[ServiceSampleTypeToIndex(ServiceSampleType::Elevation)] = 2;
+    ServiceIndices[ServiceSampleTypeToIndex(ServiceSampleType::Slope)] = 2;
+    ServiceIndices[ServiceSampleTypeToIndex(ServiceSampleType::Aspect)] = 2;
+    ServiceIndices[ServiceSampleTypeToIndex(ServiceSampleType::Temperature)] = 10;
+    ServiceIndices[ServiceSampleTypeToIndex(ServiceSampleType::RelativeHumidity)] = 10;
+    ServiceIndices[ServiceSampleTypeToIndex(ServiceSampleType::Precipitation)] = 10;
     References.emplace_back(ReferenceCreateFIRMS());
     References.emplace_back(ReferenceCreateEONET());
-}
-
-std::unique_ptr<Service>& ServiceManager::GetService(ServiceSampleType type)
-{
-    return Services[ServiceIndices.at(type)];
 }
 
 std::unique_ptr<Reference>& ServiceManager::GetReference()
 {
     return References[ReferenceIndex];
+}
+
+ServiceSampleTypeValue ServiceManager::GetValue(ServiceSampleType type, const glm::dvec2& latLong, float time) const
+{
+    return Context.GetValue(type, latLong, time);
+}
+
+ServiceSampleTypeValue ServiceManager::GetValue(ServiceSampleType type, int x, int y, float time) const
+{
+    return Context.GetValue(type, x, y, time);
+}
+
+glm::ivec2 ServiceManager::GetSize(ServiceSampleType type) const
+{
+    return Context.GetSize(type);
+}
+
+ImTextureRef ServiceManager::GetTextureRef(ServiceSampleType type) const
+{
+    return Context.GetTextureRef(type);
 }
 
 void ServiceManager::RenderImGui(Worker& worker)
@@ -75,8 +83,10 @@ void ServiceManager::RenderImGui(Worker& worker)
         }
         ImGui::EndCombo();
     }
-    for (auto& [type, index] : ServiceIndices)
+    for (uint32_t typeIndex = 0; typeIndex < ServiceIndices.size(); typeIndex++)
     {
+        ServiceSampleType type = ServiceSampleTypeFromIndex(typeIndex);
+        int& index = ServiceIndices[typeIndex];
         if (ImGui::BeginCombo(ServiceSampleTypeToString(type), Services[index]->GetDisplayName()))
         {
             for (int i = 0; i < Services.size(); i++)
@@ -100,7 +110,7 @@ void ServiceManager::RenderImGui(Worker& worker)
     {
         if (ImGui::TreeNode(service->GetDisplayName()))
         {
-            service->RenderImGui();
+            service->RenderImGui(Context);
             ImGui::TreePop();
         }
     }
@@ -109,16 +119,20 @@ void ServiceManager::RenderImGui(Worker& worker)
 
 void ServiceManager::Download(Worker& worker)
 {
+    Context.Clear();
     ServiceIndicesToTypes.clear();
-    for (const auto& [type, index] : ServiceIndices)
+    for (uint32_t typeIndex = 0; typeIndex < ServiceIndices.size(); typeIndex++)
     {
+        ServiceSampleType type = ServiceSampleTypeFromIndex(typeIndex);
+        int index = ServiceIndices[typeIndex];
         ServiceIndicesToTypes[index] |= type;
     }
-    for (const auto& [index, types] : ServiceIndicesToTypes)
+    worker.Submit([this, downloads = ServiceIndicesToTypes]()
     {
-        worker.Submit([&]()
+        for (const auto& [index, types] : downloads)
         {
             Services[index]->Download(
+                Context,
                 types,
                 Database.GetMinLatLong(),
                 Database.GetMaxLatLong(),
@@ -127,8 +141,9 @@ void ServiceManager::Download(Worker& worker)
                 Database.GetStartDate(),
                 Database.GetEndDate(),
                 SDL_GetBasePath());
-        });
-    }
+        }
+        Context.PostDownload();
+    });
 }
 
 Future<FireResults> ServiceManager::Simulate(Worker& worker, ankerl::unordered_dense::set<glm::ivec2> selected)
@@ -138,22 +153,19 @@ Future<FireResults> ServiceManager::Simulate(Worker& worker, ankerl::unordered_d
         FireResults results;
         const auto getStaticPixel = [this](ServiceSampleType type) -> std::function<float(int, int)>
         {
-            const Service* service = Services[ServiceIndices.at(type)].get();
-            return [service, type](int x, int y)
+            return [this, type](int x, int y)
             {
-                return service->GetValue(type, x, y, 0.0f).F32;
+                return Context.GetValue(type, x, y, 0.0f).F32;
             };
         };
         const auto getDynamicPixel = [this](ServiceSampleType type) -> std::function<float(int, int, float)>
         {
-            const Service* service = Services[ServiceIndices.at(type)].get();
-            return [service, type](int x, int y, float time)
+            return [this, type](int x, int y, float time)
             {
-                return service->GetValue(type, x, y, time).F32;
+                return Context.GetValue(type, x, y, time).F32;
             };
         };
-        const Service* fuelService = Services[ServiceIndices.at(ServiceSampleType::FuelModel)].get();
-        glm::ivec2 size = fuelService->GetSize(ServiceSampleType::FuelModel);
+        glm::ivec2 size = Context.GetSize(ServiceSampleType::FuelModel);
         glm::dvec2 min = Database.GetMinLatLong();
         glm::dvec2 max = Database.GetMaxLatLong();
         SDL_assert(size.x > 0 && size.y > 0);
@@ -163,9 +175,9 @@ Future<FireResults> ServiceManager::Simulate(Worker& worker, ankerl::unordered_d
         {
             return selected.contains(glm::ivec2{x, y});
         });
-        Simulator.SetFuelModel([fuelService](int x, int y)
+        Simulator.SetFuelModel([this](int x, int y)
         {
-            return FireFuelModelType(fuelService->GetValue(ServiceSampleType::FuelModel, x, y, 0.0f).U32);
+            return FireFuelModelType(Context.GetValue(ServiceSampleType::FuelModel, x, y, 0.0f).U32);
         });
         Simulator.SetLongitude([min, max, size](int x, int)
         {

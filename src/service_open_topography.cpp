@@ -1,5 +1,6 @@
 // https://portal.opentopography.org/apidocs/#/Public/getGlobalDem
 
+#include <SDL3/SDL.h>
 #include <spdlog/spdlog.h>
 
 #include <filesystem>
@@ -39,6 +40,11 @@ public:
         return ServiceSampleType::Elevation;
     }
 
+    ServiceSampleType GetDerivedSampleTypes() const override
+    {
+        return ServiceSampleType::Slope | ServiceSampleType::Aspect;
+    }
+
     std::vector<std::string> GetURLs(const glm::dvec2& minLatLong, const glm::dvec2& maxLatLong, const Date& startDate, const Date& endDate) const override
     {
         const glm::dvec2 size = MathLatLongToMeters(minLatLong, maxLatLong);
@@ -70,12 +76,23 @@ public:
         return 1;
     }
 
-    void DeriveStaticData(ServiceSampleType type, GDALDatasetH lowResolution, const std::string& directory) override
+    void DeriveStaticData(ServiceSampleType inType, ServiceSampleType outType, GDALDatasetH lowResolution, const std::string& directory) override
     {
-        if (type == ServiceSampleType::Elevation)
+        if (inType != ServiceSampleType::Elevation)
         {
+            return;
+        }
+        switch (outType)
+        {
+        case ServiceSampleType::Slope:
             DEMProcessing(lowResolution, directory, ServiceSampleType::Slope);
+            break;
+        case ServiceSampleType::Aspect:
             DEMProcessing(lowResolution, directory, ServiceSampleType::Aspect);
+            break;
+        default:
+            SDL_assert(false);
+            break;
         }
     }
 };

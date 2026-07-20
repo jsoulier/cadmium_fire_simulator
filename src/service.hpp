@@ -1,6 +1,5 @@
 #pragma once
 
-#include <ankerl/unordered_dense.h>
 #include <gdal_fwd.h>
 #include <glm/glm.hpp>
 #include <imgui.h>
@@ -36,14 +35,15 @@ enum class ServiceSampleType
     SolarRadiation = 1 << 17,
     Snowfall = 1 << 18,
     SnowDepth = 1 << 19,
-    All =
+    Static =
         FuelModel |
         Elevation |
         Slope |
         Aspect |
         CanopyCover |
         CanopyHeight |
-        CrownRatio |
+        CrownRatio,
+    Dynamic =
         WindSpeed |
         WindDirection |
         MoistureOneHour |
@@ -57,7 +57,10 @@ enum class ServiceSampleType
         SolarRadiation |
         Snowfall |
         SnowDepth,
+    All = Static | Dynamic,
 };
+
+static constexpr int kServiceSampleTypeMax = 20;
 
 constexpr ServiceSampleType operator|(ServiceSampleType a, ServiceSampleType b)
 {
@@ -97,13 +100,7 @@ struct ServiceSampleTypeDynamicValue
     float Time; // epoch hours
 };
 
-enum class ServiceSampleTypeTime
-{
-    Static,
-    Dynamic,
-};
-
-static constexpr const char* kServiceSampleTypeStrings[] =
+static constexpr const char* kServiceSampleTypeStrings[kServiceSampleTypeMax] =
 {
     "Fuel Model",
     "Elevation",
@@ -127,7 +124,7 @@ static constexpr const char* kServiceSampleTypeStrings[] =
     "Snow Depth",
 };
 
-static constexpr ServiceSampleTypeFormat kServiceSampleTypeFormats[] =
+static constexpr ServiceSampleTypeFormat kServiceSampleTypeFormats[kServiceSampleTypeMax] =
 {
     ServiceSampleTypeFormat::U32, // fuel model
     ServiceSampleTypeFormat::F32, // elevation
@@ -151,50 +148,25 @@ static constexpr ServiceSampleTypeFormat kServiceSampleTypeFormats[] =
     ServiceSampleTypeFormat::F32, // snow depth
 };
 
-static constexpr ServiceSampleTypeTime kServiceSampleTypeTimes[] =
-{
-    ServiceSampleTypeTime::Static, // fuel model 
-    ServiceSampleTypeTime::Static, // elevation 
-    ServiceSampleTypeTime::Static, // slope 
-    ServiceSampleTypeTime::Static, // aspect 
-    ServiceSampleTypeTime::Static, // canopy cover 
-    ServiceSampleTypeTime::Static, // canopy height 
-    ServiceSampleTypeTime::Static, // crown ratio 
-    ServiceSampleTypeTime::Dynamic, // wind speed 
-    ServiceSampleTypeTime::Dynamic, // wind direction 
-    ServiceSampleTypeTime::Dynamic, // 1h moisture 
-    ServiceSampleTypeTime::Dynamic, // 10h moisture 
-    ServiceSampleTypeTime::Dynamic, // 100h moisture 
-    ServiceSampleTypeTime::Dynamic, // live herbaceous moisture 
-    ServiceSampleTypeTime::Dynamic, // live woody moisture 
-    ServiceSampleTypeTime::Dynamic, // temperature 
-    ServiceSampleTypeTime::Dynamic, // relative humidity 
-    ServiceSampleTypeTime::Dynamic, // precipitation 
-    ServiceSampleTypeTime::Dynamic, // solar radiation 
-    ServiceSampleTypeTime::Dynamic, // snowfall 
-    ServiceSampleTypeTime::Dynamic, // snow depth
-};
-
 uint32_t ServiceSampleTypeToIndex(ServiceSampleType type);
 ServiceSampleType ServiceSampleTypeFromIndex(uint32_t index);
 const char* ServiceSampleTypeToString(ServiceSampleType type);
-ServiceSampleTypeTime ServiceSampleTypeToTime(ServiceSampleType type);
 ServiceSampleTypeFormat ServiceSampleTypeToFormat(ServiceSampleType type);
+
+class ServiceContext;
 
 class Service
 {
-protected:
-    struct StaticSampleData;
-    struct DynamicSampleData;
-
 public:
     virtual ~Service() = default;
     virtual const char* GetName() const = 0;
     virtual const char* GetDisplayName() const = 0;
     virtual ServiceSampleType GetSupportedTypes() const = 0;
     virtual ServiceSampleType GetRequiredSampleTypes(ServiceSampleType types) const { return {}; }
-    virtual void RenderImGui();
+    virtual ServiceSampleType GetDerivedSampleTypes() const { return {}; }
+    virtual void RenderImGui(ServiceContext& context);
     virtual void Download(
+        ServiceContext& context,
         ServiceSampleType types,
         const glm::dvec2& minLatLong,
         const glm::dvec2& maxLatLong,
@@ -203,53 +175,19 @@ public:
         const Date& startDate,
         const Date& endDate,
         const std::filesystem::path& directory);
-    ServiceSampleTypeValue GetValue(ServiceSampleType type, const glm::dvec2& latLong, float time) const;
-    ServiceSampleTypeValue GetValue(ServiceSampleType type, int x, int y, float time) const;
-    glm::ivec2 GetSize(ServiceSampleType type) const;
-    ImTextureRef GetTextureRef(ServiceSampleType type);
 
 protected:
     virtual std::vector<std::string> GetURLs(const glm::dvec2& minLatLong, const glm::dvec2& maxLatLong, const Date& startDate, const Date& endDate) const { return {}; }
     virtual std::vector<ServiceSampleTypeDynamicValue> GetDynamicValues(const std::string& response, ServiceSampleType type) const { return {}; }
-    virtual void DeriveDynamicData(ServiceSampleType type, const glm::dvec2& minLatLong, const glm::dvec2& maxLatLong, const Date& startDate) {}
-    virtual void PostProcessDynamicData() {}
+    virtual void DeriveDynamicData(ServiceContext& context, ServiceSampleType type, const glm::dvec2& minLatLong, const glm::dvec2& maxLatLong, const Date& startDate) {}
+    virtual void PostProcessDynamicData(ServiceContext& context) {}
     virtual int GetBand(ServiceSampleType type) const { return 0; }
-    virtual void DeriveStaticData(ServiceSampleType type, GDALDatasetH lowResolution, const std::string& directory) {}
+    virtual void DeriveStaticData(ServiceSampleType inType, ServiceSampleType outType, GDALDatasetH lowResolution, const std::string& directory) {}
     virtual void PostProcessStaticData(ServiceSampleType type, std::vector<ServiceSampleTypeValue>& pixels) {}
-    ServiceSampleTypeValue GetDynamicValue(ServiceSampleType type, float time) const;
     void DEMProcessing(GDALDatasetH elevation, const std::string& directory, ServiceSampleType type);
 
-    struct StaticSampleData
-    {
-        StaticSampleData();
-
-        int Width;
-        int Height;
-        // [0] upper-left corner X
-        // [1] pixel width
-        // [2] row rotation (0 for north-up)
-        // [3] upper-left corner Y
-        // [4] pixel height (usually negative)
-        // [5] column rotation (0 for north-up)
-        double GeoTransform[6];
-        double InverseGeoTransform[6];
-        std::string Wkt;
-        std::vector<ServiceSampleTypeValue> Pixels;
-        ImTextureRef Texture;
-    };
-
-    struct DynamicSampleData
-    {
-        DynamicSampleData();
-
-        float Start;      // hours
-        float Resolution; // hours per sample
-        std::vector<ServiceSampleTypeValue> Samples;
-    };
-
-    ankerl::unordered_dense::map<ServiceSampleType, StaticSampleData> StaticData;
-    ankerl::unordered_dense::map<ServiceSampleType, DynamicSampleData> DynamicData;
-    float DynamicTime = 0.0f;
+private:
+    float Time = 0.0f;
 };
 
 std::unique_ptr<Service> ServiceCreateESAWorldCover();
